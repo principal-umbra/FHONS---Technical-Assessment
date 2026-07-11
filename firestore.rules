@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /evaluations_servicio_al_cliente/{document} {
+      allow read, write: if true;
+    }
+    match /questionnaires/{document} {
+      allow read, write: if true;
+    }
+    match /credentials/{document} {
+      allow read, write: if true;
+    }
+  }
+}

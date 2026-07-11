@@ -1,0 +1,6 @@
+{
+  "name": "Cuestionario de Soporte TI",
+  "description": "Herramienta de autoevaluación reflexiva e introspectiva de servicio y habilidades blandas para agentes de soporte de TI, basada en el cuestionario de agente técnico a excelente agente.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

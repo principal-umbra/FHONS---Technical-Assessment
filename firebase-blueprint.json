@@ -1,0 +1,25 @@
+{
+  "collections": {
+    "evaluations": {
+      "description": "Cuestionarios de autoevaluación de soporte TI de FHONS",
+      "fields": {
+        "profile": {
+          "type": "map",
+          "fields": {
+            "name": { "type": "string", "description": "Nombre completo del colaborador" },
+            "email": { "type": "string", "description": "Correo electrónico del colaborador" },
+            "date": { "type": "string", "description": "Fecha del cuestionario" },
+            "acceptedConsent": { "type": "boolean", "description": "Consentimiento informado aceptado" }
+          }
+        },
+        "answers": {
+          "type": "map",
+          "description": "Respuestas completas de las 6 secciones del cuestionario"
+        },
+        "status": { "type": "string", "description": "'in_progress' o 'completed'" },
+        "createdAt": { "type": "string", "description": "Timestamp ISO de creación" },
+        "updatedAt": { "type": "string", "description": "Timestamp ISO de última actualización" }
+      }
+    }
+  }
+}

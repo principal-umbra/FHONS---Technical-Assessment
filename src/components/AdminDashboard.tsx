@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogOut, ArrowLeft, Users, BarChart3, FlaskConical } from 'lucide-react';
+import { LogOut, ArrowLeft, Users, BarChart3, FlaskConical, Settings } from 'lucide-react';
 import { EvaluationDocument } from '../lib/firebase';
 import AdminUsersList from './AdminUsersList';
 import AdminUserDetail from './AdminUserDetail';
 import AdminEvaluationSections from './AdminEvaluationSections';
 import AdminReports from './AdminReports';
 import AdminLaboratory from './AdminLaboratory';
+import AdminSettings from './AdminSettings';
 import SummaryScreen from './questionnaires/servicio_al_cliente/SummaryScreen';
 
 interface AdminDashboardProps {
@@ -14,7 +15,7 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ onBack }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'usuarios' | 'reportes' | 'laboratorio'>('usuarios');
+  const [activeTab, setActiveTab] = useState<'usuarios' | 'reportes' | 'laboratorio' | 'configuraciones'>('usuarios');
   const [currentView, setCurrentView] = useState<'tabs' | 'user_detail' | 'eval_report' | 'eval_detail'>('tabs');
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
   const [selectedEval, setSelectedEval] = useState<EvaluationDocument | null>(null);
@@ -118,12 +119,21 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
             >
               <FlaskConical size={18} /> Laboratorio
             </button>
+            <button
+              onClick={() => setActiveTab('configuraciones')}
+              className={`flex-1 py-4 flex items-center justify-center gap-2 text-sm font-semibold transition ${
+                activeTab === 'configuraciones' ? 'text-slate-900 border-b-2 border-slate-900' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Settings size={18} /> Configuraciones
+            </button>
           </div>
           
           <div className="flex-1 bg-slate-50/50">
             {activeTab === 'usuarios' && <AdminUsersList onUserSelect={handleUserSelect} />}
             {activeTab === 'reportes' && <AdminReports onViewReport={handleViewReport} onViewDetail={handleViewDetail} />}
             {activeTab === 'laboratorio' && <AdminLaboratory />}
+            {activeTab === 'configuraciones' && <AdminSettings />}
           </div>
         </div>
       )}

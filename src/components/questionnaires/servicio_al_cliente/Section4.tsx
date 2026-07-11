@@ -5,10 +5,12 @@
 
 import { Section4Answers } from '../../../types';
 import { TECHNIQUES, OWNERSHIP_LETTERS } from './data';
-import { MessageSquare, HeartHandshake, FileWarning, Check } from 'lucide-react';
-import { motion } from 'motion/react';
-import { useState } from 'react';
+import { MessageSquare, HeartHandshake, FileWarning, Check, Info, X, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect } from 'react';
 import { InputBadge } from './Section1';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../../lib/firebase';
 
 interface Section4Props {
   answers: Section4Answers;
@@ -17,6 +19,28 @@ interface Section4Props {
 
 export default function Section4({ answers, onChange }: Section4Props) {
   const [activeLetter, setActiveLetter] = useState<string>('O');
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [tecnicasImage, setTecnicasImage] = useState<string | null>(null);
+  const [loadingImage, setLoadingImage] = useState(false);
+
+  useEffect(() => {
+    if (isImageModalOpen && !tecnicasImage) {
+      setLoadingImage(true);
+      const docRef = doc(db, 'app_settings', 'general');
+      getDoc(docRef).then(docSnap => {
+        if (docSnap.exists() && docSnap.data().tecnicas_comunicacion_img) {
+          setTecnicasImage(docSnap.data().tecnicas_comunicacion_img);
+        } else {
+          setTecnicasImage('/media/tecnicas_comunicacion.jpg'); // Fallback
+        }
+      }).catch(err => {
+        console.error("Error loading image from settings:", err);
+        setTecnicasImage('/media/tecnicas_comunicacion.jpg'); // Fallback
+      }).finally(() => {
+        setLoadingImage(false);
+      });
+    }
+  }, [isImageModalOpen]);
 
   const handleTextChange = (field: keyof Section4Answers, val: any) => {
     onChange({ ...answers, [field]: val });
@@ -65,10 +89,20 @@ export default function Section4({ answers, onChange }: Section4Props) {
             <MessageSquare size={20} />
           </div>
           <div className="flex-1 space-y-2">
-            <div className="flex flex-wrap justify-between items-start gap-2">
-              <h4 className="text-base font-semibold text-slate-900 font-display">
-                7. Técnicas Profesionales de Comunicación
-              </h4>
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h4 className="text-base font-semibold text-slate-900 font-display">
+                  7. Técnicas Profesionales de Comunicación
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsImageModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-semibold hover:bg-blue-100 transition border border-blue-200"
+                  title="Ver Infografía sobre Técnicas de Comunicación"
+                >
+                  <Info size={14} /> Ver Infografía
+                </button>
+              </div>
               <InputBadge type="multiple" />
             </div>
             <p className="text-slate-500 text-xs mt-1">
@@ -353,6 +387,56 @@ export default function Section4({ answers, onChange }: Section4Props) {
           </div>
         </div>
       </div>
+
+      {/* Image Modal */}
+      <AnimatePresence>
+        {isImageModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => setIsImageModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl overflow-hidden shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center p-4 border-b border-slate-200">
+                <h3 className="font-bold text-slate-800">Técnicas Profesionales de Comunicación</h3>
+                <button
+                  onClick={() => setIsImageModalOpen(false)}
+                  className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto flex-1 flex justify-center items-center bg-slate-50 min-h-[300px]">
+                {loadingImage ? (
+                  <div className="flex flex-col items-center justify-center text-slate-400 space-y-2">
+                    <Loader2 size={32} className="animate-spin" />
+                    <p className="text-sm">Cargando infografía...</p>
+                  </div>
+                ) : (
+                  <img 
+                    src={tecnicasImage || '/media/tecnicas_comunicacion.jpg'} 
+                    alt="Infografía Técnicas de Comunicación"
+                    className="max-w-full h-auto rounded-xl shadow-sm border border-slate-200"
+                    onError={(e) => {
+                      // Fallback if image not found
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.parentElement!.innerHTML = '<div class="text-center text-slate-500 py-8"><p>La imagen no está disponible. Por favor, súbela desde Configuraciones en el panel de administrador.</p></div>';
+                    }}
+                  />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

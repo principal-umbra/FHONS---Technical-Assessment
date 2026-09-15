@@ -1,16 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /evaluations_servicio_al_cliente/{document} {
+    match /evaluations_servicio_al_cliente/{document=**} {
       allow read, write: if true;
     }
-    match /questionnaires/{document} {
+    match /evaluations_perfil_profesional/{document=**} {
       allow read, write: if true;
     }
-    match /credentials/{document} {
+    match /questionnaires/{document=**} {
       allow read, write: if true;
     }
-    match /app_settings/{document} {
+    match /credentials/{document=**} {
+      allow read, write: if true;
+    }
+    match /app_settings/{document=**} {
+      allow read, write: if true;
+    }
+    match /laboratory_reports/{document=**} {
       allow read, write: if true;
     }
   }

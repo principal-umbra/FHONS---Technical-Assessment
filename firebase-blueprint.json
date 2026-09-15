@@ -1,25 +1,109 @@
 {
-  "collections": {
-    "evaluations": {
-      "description": "Cuestionarios de autoevaluación de soporte TI de FHONS",
-      "fields": {
-        "profile": {
-          "type": "map",
-          "fields": {
-            "name": { "type": "string", "description": "Nombre completo del colaborador" },
-            "email": { "type": "string", "description": "Correo electrónico del colaborador" },
-            "date": { "type": "string", "description": "Fecha del cuestionario" },
-            "acceptedConsent": { "type": "boolean", "description": "Consentimiento informado aceptado" }
-          }
-        },
-        "answers": {
-          "type": "map",
-          "description": "Respuestas completas de las 6 secciones del cuestionario"
-        },
-        "status": { "type": "string", "description": "'in_progress' o 'completed'" },
-        "createdAt": { "type": "string", "description": "Timestamp ISO de creación" },
-        "updatedAt": { "type": "string", "description": "Timestamp ISO de última actualización" }
+  "entities": {
+    "Questionnaire": {
+      "title": "Questionnaire",
+      "description": "Definición y metadatos de los cuestionarios disponibles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "collectionPath": { "type": "string" },
+        "uiPath": { "type": "string" }
+      },
+      "required": ["id", "title", "collectionPath"]
+    },
+    "EvaluationServicioCliente": {
+      "title": "EvaluationServicioCliente",
+      "description": "Evaluación del cuestionario de Soporte TI de Excelencia",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "questionnaireId": { "type": "string" },
+        "profile": { "type": "object" },
+        "answers": { "type": "object" },
+        "status": { "type": "string", "enum": ["in_progress", "completed"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "currentStep": { "type": "string" }
+      },
+      "required": ["id", "questionnaireId", "profile", "status", "createdAt", "updatedAt"]
+    },
+    "EvaluationPerfilProfesional": {
+      "title": "EvaluationPerfilProfesional",
+      "description": "Ficha y respuestas del cuestionario de Perfil Profesional FHONS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "questionnaireId": { "type": "string" },
+        "profile": { "type": "object" },
+        "answers": { "type": "object" },
+        "status": { "type": "string", "enum": ["in_progress", "completed"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "currentStep": { "type": "string" }
+      },
+      "required": ["id", "questionnaireId", "profile", "status", "createdAt", "updatedAt"]
+    },
+    "LaboratoryReport": {
+      "title": "LaboratoryReport",
+      "description": "Informe generado por IA para un usuario y formulario específico",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "questionnaireId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "reportContent": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userEmail", "reportContent"]
+    },
+    "AdminCredential": {
+      "title": "AdminCredential",
+      "description": "Credenciales de acceso para administradores del sistema",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "password", "role"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Configuraciones globales de la plataforma",
+      "type": "object",
+      "properties": {
+        "tecnicas_comunicacion_img": { "type": "string" }
       }
+    }
+  },
+  "firestore": {
+    "/questionnaires/{questionnaireId}": {
+      "schema": "Questionnaire",
+      "description": "Colección de formularios y cuestionarios disponibles en el sistema"
+    },
+    "/evaluations_servicio_al_cliente/{evalId}": {
+      "schema": "EvaluationServicioCliente",
+      "description": "Almacenamiento exclusivo e independiente para evaluaciones de Soporte TI"
+    },
+    "/evaluations_perfil_profesional/{evalId}": {
+      "schema": "EvaluationPerfilProfesional",
+      "description": "Almacenamiento exclusivo e independiente para fichas de Perfil Profesional FHONS"
+    },
+    "/laboratory_reports/{reportId}": {
+      "schema": "LaboratoryReport",
+      "description": "Reportes y análisis guardados de laboratorio segmentados por formulario"
+    },
+    "/credentials/{email}": {
+      "schema": "AdminCredential",
+      "description": "Credenciales y roles de administradores"
+    },
+    "/app_settings/{settingId}": {
+      "schema": "AppSettings",
+      "description": "Configuraciones y recursos visuales generales"
     }
   }
 }

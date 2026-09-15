@@ -90,6 +90,59 @@ export interface QuestionnaireAnswers {
   section6: Section6Answers;
 }
 
+export interface EstudioCertificacionItem {
+  id: string;
+  tipo: string;
+  titulo: string;
+  institucion: string;
+  anio?: string;
+  estado?: string;
+}
+
+export interface LogroProfesionalDetalle {
+  titulo: string;
+  categoria?: string;
+  anio?: string;
+  descripcion?: string;
+  impacto?: string;
+  contextoReto?: string;
+  accionRealizada?: string;
+  impactoResultado?: string;
+}
+
+export interface PerfilProfesionalAnswers {
+  // Sección 1: Trayectoria y Rol en FHONS
+  cargo: string;
+  queHaces: string;
+  fechaIngreso: string;
+  aniosExperiencia: string;
+
+  // Sección 2: Especialidades, Formación y Logros
+  habilidadesEspecialidades: string[];
+  habilidadesTexto: string;
+  estudiosCertificaciones: string;
+  estudiosCertificacionesList?: EstudioCertificacionItem[];
+  logroProfesional: string;
+  logroDetallado?: LogroProfesionalDetalle;
+
+  // Sección 3: Pasión y Cultura FHONS
+  disfruteTrabajo: string;
+  gustoFhons: string;
+  tresPalabras: [string, string, string];
+  hobbies: string;
+  talentoOculto: string;
+
+  // Sección 4: Factor Humano, Redes y Privacidad
+  anecdotaDivertida: string;
+  temaHoras: string;
+  fraseLema: string;
+  algoMas: string;
+  linkedinUrl: string;
+  fotoPreferencia: 'tengo_foto' | 'coordinar_sesion' | '';
+  fotoUrl?: string;
+  restriccionesPrivacidad: string;
+}
+
 export interface Questionnaire {
   id: string;
   title: string;
@@ -99,7 +152,10 @@ export interface Questionnaire {
   createdAt?: string;
 }
 
-export type ActiveStep = 'welcome' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'summary';
+export type ActiveStep = 
+  | 'welcome' 
+  | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'summary'
+  | 'perfil_section1' | 'perfil_section2' | 'perfil_section3' | 'perfil_section4' | 'perfil_summary';
 
 export interface PillarMetadata {
   id: string;

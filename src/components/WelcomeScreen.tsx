@@ -5,18 +5,42 @@
 
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { User, Mail, Calendar, Play, Database, Trash2, Sparkles, RefreshCw, ArrowRight, Loader2, CheckCircle, Shield } from 'lucide-react';
+import { 
+  User, 
+  Mail, 
+  Calendar, 
+  Play, 
+  Database, 
+  Trash2, 
+  Sparkles, 
+  ArrowRight, 
+  Loader2, 
+  Shield, 
+  Globe, 
+  Headphones, 
+  CheckCircle2, 
+  Lock 
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { listEvaluations, deleteEvaluation, EvaluationDocument } from '../lib/firebase';
 
 interface WelcomeScreenProps {
-  onStart: (profile: UserProfile, existingId?: string) => void;
+  onStart: (profile: UserProfile, questionnaireId: 'servicio_al_cliente' | 'perfil_profesional', existingId?: string) => void;
   onLoadEvaluation: (evalDoc: EvaluationDocument) => void;
   onAdminLogin: () => void;
   initialProfile: UserProfile;
+  selectedQuestionnaireId: 'servicio_al_cliente' | 'perfil_profesional';
+  onSelectQuestionnaire: (id: 'servicio_al_cliente' | 'perfil_profesional') => void;
 }
 
-export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin, initialProfile }: WelcomeScreenProps) {
+export default function WelcomeScreen({ 
+  onStart, 
+  onLoadEvaluation, 
+  onAdminLogin, 
+  initialProfile,
+  selectedQuestionnaireId,
+  onSelectQuestionnaire
+}: WelcomeScreenProps) {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
   
@@ -25,19 +49,23 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
   const [checkingDb, setCheckingDb] = useState<boolean>(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
+  const targetCollection = selectedQuestionnaireId === 'perfil_profesional' 
+    ? 'evaluations_perfil_profesional' 
+    : 'evaluations_servicio_al_cliente';
+
   // Validate email format
   const isValidEmail = (email: string) => {
     return /\S+@\S+\.\S+/.test(email);
   };
 
-  // Trigger Firestore search automatically when email becomes valid
+  // Trigger Firestore search automatically when email becomes valid or questionnaire changes
   useEffect(() => {
     let active = true;
     const emailToSearch = profile.email.trim();
 
     if (isValidEmail(emailToSearch)) {
       setCheckingDb(true);
-      listEvaluations(emailToSearch)
+      listEvaluations(emailToSearch, targetCollection)
         .then((records) => {
           if (active) {
             setDetectedEvaluations(records);
@@ -59,7 +87,7 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
     return () => {
       active = false;
     };
-  }, [profile.email]);
+  }, [profile.email, selectedQuestionnaireId, targetCollection]);
 
   const handleDeleteDoc = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -68,9 +96,9 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
     }
     setIsDeletingId(id);
     try {
-      await deleteEvaluation(id);
+      await deleteEvaluation(id, targetCollection);
       // Refresh list
-      const records = await listEvaluations(profile.email.trim());
+      const records = await listEvaluations(profile.email.trim(), targetCollection);
       setDetectedEvaluations(records);
     } catch (error) {
       console.error('Error deleting evaluation', error);
@@ -97,11 +125,13 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (validate() && profile.acceptedConsent) {
-      onStart(profile);
+      onStart(profile, selectedQuestionnaireId);
     }
   };
 
   const isFormValid = profile.acceptedConsent && profile.name.trim() && isValidEmail(profile.email.trim());
+
+  const isPerfil = selectedQuestionnaireId === 'perfil_profesional';
 
   return (
     <motion.div
@@ -109,92 +139,166 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -15 }}
       transition={{ duration: 0.4 }}
-      className="max-w-5xl mx-auto w-full flex items-center justify-center py-6 md:py-12"
+      className="max-w-5xl mx-auto w-full flex items-center justify-center py-6 md:py-10"
       id="welcome-screen-container"
     >
-      {/* Centered Main 2-Column Card with exact aspect ratio/design of the screenshot */}
+      {/* Centered Main 2-Column Card */}
       <div className="bg-white rounded-[2rem] shadow-2xl shadow-slate-200/80 border border-slate-200/60 overflow-hidden grid grid-cols-1 md:grid-cols-12 w-full max-w-5xl min-h-[640px]" id="technical-assessment-card">
         
-        {/* Left Column: Workshop Information (Navy blue background) */}
-        <div className="md:col-span-5 bg-[#0b1329] p-10 md:p-12 flex flex-col justify-between text-white relative overflow-hidden" id="card-left-side">
-          {/* Background subtle elements */}
+        {/* Left Column: Workshop / Profile Information */}
+        <div className="md:col-span-5 bg-[#0b1329] p-8 md:p-12 flex flex-col justify-between text-white relative overflow-hidden" id="card-left-side">
+          {/* Background subtle glow */}
           <div className="absolute -top-12 -left-12 w-48 h-48 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -bottom-12 -right-12 w-48 h-48 bg-slate-500/10 rounded-full blur-3xl pointer-events-none" />
 
           <div className="space-y-6 relative z-10">
-            {/* Workshop Evaluation Badge */}
+            {/* Evaluation Badge */}
             <div>
               <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-bold px-3.5 py-1.5 rounded-full uppercase tracking-widest inline-block font-mono">
-                Autoevaluación TI
+                {isPerfil ? 'Website Oficial FHONS' : 'Autoevaluación TI'}
               </span>
             </div>
 
             {/* Title */}
             <h1 className="text-3xl md:text-4xl font-bold leading-tight tracking-tight font-display mt-2">
-              Soporte TI<br />
-              <span className="text-white">de Excelencia</span>
+              {isPerfil ? (
+                <>
+                  Perfil Profesional<br />
+                  <span className="text-white">FHONS</span>
+                </>
+              ) : (
+                <>
+                  Soporte TI<br />
+                  <span className="text-white">de Excelencia</span>
+                </>
+              )}
             </h1>
 
             {/* Description */}
             <p className="text-slate-400 text-xs leading-relaxed font-sans font-light">
-              Este sistema evalúa la empatía, el ownership y los criterios de servicio basados en los 8 pilares fundamentales de atención técnica.
+              {isPerfil
+                ? 'Cuestionario para crear tu perfil público en el website oficial de la compañía: trayectoria, especialidades, pasiones y datos biográficos.'
+                : 'Este sistema evalúa la empatía, el ownership y los criterios de servicio basados en los 8 pilares fundamentales de atención técnica.'}
             </p>
 
             {/* Circular points list */}
-            <div className="space-y-5 pt-4" id="bullet-points">
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full border border-slate-700/80 bg-slate-800/30 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-slate-400 font-mono font-semibold">
-                  1
-                </div>
-                <p className="text-slate-400 text-xs leading-normal font-sans">
-                  Tus respuestas se utilizan estrictamente para el desarrollo de tus habilidades blandas y el proceso técnico.
-                </p>
-              </div>
+            <div className="space-y-4 pt-2" id="bullet-points">
+              {isPerfil ? (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full border border-blue-700/80 bg-blue-900/40 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-blue-300 font-mono font-semibold">
+                      1
+                    </div>
+                    <p className="text-slate-300 text-xs leading-normal font-sans">
+                      Tu nombre, apellido y correo corporativo se registrarán automáticamente a partir de tu acceso para no duplicar preguntas.
+                    </p>
+                  </div>
 
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full border border-slate-700/80 bg-slate-800/30 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-slate-400 font-mono font-semibold">
-                  2
-                </div>
-                <p className="text-slate-400 text-xs leading-normal font-sans">
-                  No existen respuestas erróneas, solo reflexiones honestas para potenciar tu empatía con el cliente.
-                </p>
-              </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full border border-blue-700/80 bg-blue-900/40 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-blue-300 font-mono font-semibold">
+                      2
+                    </div>
+                    <p className="text-slate-300 text-xs leading-normal font-sans">
+                      Sin análisis psicológico. Tú decides qué destacar en tu ficha web y cuentas con control de privacidad para datos confidenciales.
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full border border-slate-700/80 bg-slate-800/30 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-slate-400 font-mono font-semibold">
+                      1
+                    </div>
+                    <p className="text-slate-400 text-xs leading-normal font-sans">
+                      Tus respuestas se utilizan estrictamente para el desarrollo de tus habilidades blandas y el proceso técnico.
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full border border-slate-700/80 bg-slate-800/30 flex items-center justify-center shrink-0 mt-0.5 text-[10px] text-slate-400 font-mono font-semibold">
+                      2
+                    </div>
+                    <p className="text-slate-400 text-xs leading-normal font-sans">
+                      No existen respuestas erróneas, solo reflexiones honestas para potenciar tu empatía con el cliente.
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Copyright footer */}
-          <div className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-12 pt-6 border-t border-slate-800/60 relative z-10" id="card-left-footer">
-            © 2026 SOPORTE TI DE EXCELENCIA. TODOS LOS DERECHOS RESERVADOS.
+          <div className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-8 pt-6 border-t border-slate-800/60 relative z-10" id="card-left-footer">
+            {isPerfil ? '© 2026 FHONS. PERFIL PROFESIONAL WEB OFICIAL.' : '© 2026 SOPORTE TI DE EXCELENCIA. TODOS LOS DERECHOS RESERVADOS.'}
           </div>
         </div>
 
-        {/* Right Column: User Identification (White background) */}
-        <div className="md:col-span-7 p-10 md:p-12 flex flex-col justify-between bg-white relative" id="card-right-side">
+        {/* Right Column: Questionnaire Selection & User Identification */}
+        <div className="md:col-span-7 p-8 md:p-12 flex flex-col justify-between bg-white relative" id="card-right-side">
           <button
+            type="button"
             onClick={onAdminLogin}
-            className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-800 transition rounded-full hover:bg-slate-50"
+            className="absolute top-6 right-6 p-2 text-slate-400 hover:text-slate-800 transition rounded-full hover:bg-slate-50 cursor-pointer"
             title="Acceso Administrativo"
           >
             <Shield size={18} />
           </button>
           
           <div>
+            {/* Questionnaire Selector Tabs */}
+            <div className="mb-6">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono block mb-2">
+                Selecciona el Cuestionario a Realizar:
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => onSelectQuestionnaire('servicio_al_cliente')}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                    selectedQuestionnaireId === 'servicio_al_cliente'
+                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Headphones size={15} className="shrink-0 text-blue-600" />
+                  <span className="truncate">Soporte TI de Excelencia</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onSelectQuestionnaire('perfil_profesional')}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                    selectedQuestionnaireId === 'perfil_profesional'
+                      ? 'bg-white text-slate-900 shadow-sm border border-slate-200/60'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Globe size={15} className="shrink-0 text-emerald-600" />
+                  <span className="truncate">Perfil Profesional Web</span>
+                </button>
+              </div>
+            </div>
+
             {/* Form Header */}
-            <div className="mb-8">
-              <h2 className="text-2xl md:text-3xl font-bold text-slate-800 font-display">Identificación</h2>
+            <div className="mb-6">
+              <h2 className="text-2xl md:text-3xl font-bold text-slate-850 font-display">
+                Identificación del Colaborador
+              </h2>
               <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-                Por favor introduce tus datos para habilitar el cuestionario de autoevaluación.
+                {isPerfil
+                  ? 'Ingresa tus datos institucionales. Tu nombre, correo y fecha se asociarán a tu perfil web sin necesidad de volver a pedirlos en el formulario.'
+                  : 'Por favor introduce tus datos para habilitar el cuestionario de autoevaluación.'}
               </p>
             </div>
 
             {/* Main Form */}
-            <form onSubmit={handleSubmit} className="space-y-5" id="identification-form">
+            <form onSubmit={handleSubmit} className="space-y-4" id="identification-form">
               
               {/* Row: Name and Date */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label htmlFor="user-name" className="text-[10px] font-bold uppercase tracking-wider text-slate-400 ml-0.5 font-mono">
-                    Nombre Completo
+                    Nombre Completo *
                   </label>
                   <input
                     id="user-name"
@@ -211,7 +315,7 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
 
                 <div className="space-y-1.5">
                   <label htmlFor="evaluation-date" className="text-[10px] font-bold uppercase tracking-wider text-slate-400 ml-0.5 font-mono">
-                    Fecha de Evaluación
+                    Fecha de Registro
                   </label>
                   <input
                     id="evaluation-date"
@@ -227,7 +331,7 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
                   <label htmlFor="user-email" className="text-[10px] font-bold uppercase tracking-wider text-slate-400 ml-0.5 font-mono">
-                    Correo Electrónico
+                    Correo Electrónico Institucional *
                   </label>
                   {/* Subtle Firestore checking indicator */}
                   {checkingDb && (
@@ -240,7 +344,7 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
                 <input
                   id="user-email"
                   type="email"
-                  placeholder="usuario@correo.com"
+                  placeholder="usuario@fhons.com.do"
                   value={profile.email}
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                   className={`w-full px-4 py-3 bg-[#f8fafc] border ${
@@ -260,7 +364,9 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
                   className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer mt-0.5 accent-slate-950 shrink-0"
                 />
                 <label htmlFor="consent" className="text-[11px] text-slate-500 leading-normal cursor-pointer select-none">
-                  Acepto participar honestamente en este cuestionario de autoevaluación, asumiendo un compromiso sincero con la excelencia en el soporte técnico.
+                  {isPerfil
+                    ? 'Confirmo que la información suministrada es verídica y autorizo su uso para la creación de mi perfil en el website oficial de FHONS conforme a mis preferencias de publicación.'
+                    : 'Acepto participar honestamente en este cuestionario de autoevaluación, asumiendo un compromiso sincero con la excelencia en el soporte técnico.'}
                 </label>
               </div>
 
@@ -275,13 +381,13 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
                     : 'bg-[#e2e8f0] text-slate-400'
                 }`}
               >
-                Comenzar Evaluación
+                {isPerfil ? 'Comenzar Perfil Profesional' : 'Comenzar Evaluación'}
                 <ArrowRight size={13} />
               </button>
             </form>
           </div>
 
-          {/* Detected Firestore Records list (internal sync, only shown when valid email enters and has existing records) */}
+          {/* Detected Firestore Records list */}
           <AnimatePresence>
             {detectedEvaluations.length > 0 && (
               <motion.div
@@ -292,26 +398,21 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
                 className="mt-6 pt-5 border-t border-slate-150 space-y-3 overflow-hidden"
                 id="detected-sessions-expander"
               >
-                <div className="flex items-center gap-1.5 text-slate-700">
-                  <Database size={13} className="text-blue-500 shrink-0" />
-                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono">Registros previos encontrados en Firestore:</span>
+                <div className="flex items-center justify-between text-slate-700">
+                  <div className="flex items-center gap-1.5">
+                    <Database size={13} className="text-blue-500 shrink-0" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider font-mono">
+                      Registros previos ({isPerfil ? 'Perfil Web' : 'Soporte TI'}):
+                    </span>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-mono">
+                    {detectedEvaluations.length} encontrado(s)
+                  </span>
                 </div>
                 
                 <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1" id="detected-records-scroll">
                   {detectedEvaluations.map((item) => {
                     const isCompleted = item.status === 'completed';
-                    const activeStepMeta = item.currentStep 
-                      ? {
-                          welcome: 'Inicio',
-                          section1: 'Sección 1',
-                          section2: 'Sección 2',
-                          section3: 'Sección 3',
-                          section4: 'Sección 4',
-                          section5: 'Sección 5',
-                          section6: 'Sección 6',
-                          summary: 'Resumen'
-                        }[item.currentStep]
-                      : 'N/A';
 
                     return (
                       <div
@@ -331,11 +432,8 @@ export default function WelcomeScreen({ onStart, onLoadEvaluation, onAdminLogin,
                           </div>
                           <div className="text-[9px] text-slate-400 font-mono mt-0.5 flex items-center gap-2">
                             <span>{item.profile.date}</span>
-                            {!isCompleted && item.currentStep && (
-                              <>
-                                <span>•</span>
-                                <span className="bg-slate-200 text-slate-700 px-1 rounded-sm">Paso: {activeStepMeta}</span>
-                              </>
+                            {item.answers?.cargo && (
+                              <span className="text-slate-600 truncate">• {item.answers.cargo}</span>
                             )}
                           </div>
                         </div>

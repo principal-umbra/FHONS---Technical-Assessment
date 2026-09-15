@@ -25,8 +25,8 @@ export default function SectionContainer({
   validationError,
   children
 }: SectionContainerProps) {
-  // Find current step index in Section 1 to 6 list
-  const activeStepsOnly = steps.filter((s) => s.id !== 'welcome' && s.id !== 'summary');
+  // Find current step index in active sections list
+  const activeStepsOnly = steps.filter((s) => s.id !== 'welcome' && s.id !== 'summary' && s.id !== 'perfil_summary');
   const currentIndex = activeStepsOnly.findIndex((s) => s.id === currentStep);
   const totalSteps = activeStepsOnly.length;
 

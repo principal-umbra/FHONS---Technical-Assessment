@@ -33,6 +33,19 @@ export interface EvaluationDocument {
   createdAt: string;
   updatedAt: string;
   currentStep?: ActiveStep | string;
+  editToken?: string;
+}
+
+/**
+ * Generates a clean, human-readable edit token (e.g. FH-7K9P2X)
+ */
+export function generateEditToken(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `FH-${result}`;
 }
 
 export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
@@ -265,9 +278,10 @@ export async function saveEvaluation(
   status: 'in_progress' | 'completed',
   currentStep?: ActiveStep | string,
   collectionPath: string = 'evaluations_servicio_al_cliente',
-  questionnaireId?: string
-): Promise<void> {
-  if (!id) return;
+  questionnaireId?: string,
+  explicitToken?: string
+): Promise<string | undefined> {
+  if (!id) return undefined;
   const targetCollection = normalizeCollectionPath(collectionPath);
   const targetQuestionnaireId = questionnaireId || 
     (targetCollection === 'evaluations_perfil_profesional' ? 'perfil_profesional' : 'servicio_al_cliente');
@@ -275,31 +289,53 @@ export async function saveEvaluation(
   const docRef = doc(db, targetCollection, id);
   const now = new Date().toISOString();
   
-  // Try to check if document exists to preserve original createdAt
+  // Try to check if document exists to preserve original createdAt and editToken
   let createdAt = now;
+  let finalEditToken = explicitToken || answers?.editToken || profile?.editToken;
+
   try {
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const existingData = docSnap.data();
       createdAt = existingData.createdAt || now;
+      if (!finalEditToken && existingData.editToken) {
+        finalEditToken = existingData.editToken;
+      }
     }
   } catch (e) {
     console.error('Error fetching existing doc', e);
   }
 
+  // Generate edit token for perfil_profesional if still missing
+  if (!finalEditToken && (targetQuestionnaireId === 'perfil_profesional' || targetCollection === 'evaluations_perfil_profesional')) {
+    finalEditToken = generateEditToken();
+  }
+
+  const updatedProfile: UserProfile = {
+    ...profile,
+    ...(finalEditToken ? { editToken: finalEditToken } : {})
+  };
+
+  const updatedAnswers = {
+    ...answers,
+    ...(finalEditToken ? { editToken: finalEditToken } : {})
+  };
+
   const payload: EvaluationDocument = {
     id,
     questionnaireId: targetQuestionnaireId,
-    profile,
-    answers,
+    profile: updatedProfile,
+    answers: updatedAnswers,
     status,
     createdAt,
     updatedAt: now,
-    currentStep
+    currentStep,
+    editToken: finalEditToken
   };
 
   const cleanPayload = sanitizeForFirestore(payload);
   await setDoc(docRef, cleanPayload);
+  return finalEditToken;
 }
 
 /**

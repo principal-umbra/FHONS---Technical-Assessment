@@ -66,6 +66,7 @@ export default function App() {
   const [perfilAnswers, setPerfilAnswers] = useState<PerfilProfesionalAnswers>(INITIAL_PERFIL_ANSWERS);
 
   const [evaluationId, setEvaluationId] = useState<string>('');
+  const [editToken, setEditToken] = useState<string>('');
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'local'>('local');
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -78,6 +79,7 @@ export default function App() {
       const storedPerfilAnswers = localStorage.getItem('fhons_perfil_answers');
       const storedStep = localStorage.getItem('fhons_step');
       const storedEvalId = localStorage.getItem('fhons_evaluation_id');
+      const storedToken = localStorage.getItem('fhons_edit_token');
 
       if (storedQId === 'perfil_profesional' || storedQId === 'servicio_al_cliente') {
         setSelectedQuestionnaireId(storedQId);
@@ -97,6 +99,9 @@ export default function App() {
       if (storedEvalId) {
         setEvaluationId(storedEvalId);
         setSyncStatus('synced');
+      }
+      if (storedToken) {
+        setEditToken(storedToken);
       }
     } catch (e) {
       console.error('Error loading data from localStorage', e);
@@ -133,15 +138,23 @@ export default function App() {
           const isCompleted = isPerfil ? newStep === 'perfil_summary' : newStep === 'summary';
           const collectionPath = isPerfil ? 'evaluations_perfil_profesional' : 'evaluations_servicio_al_cliente';
           
-          await saveEvaluation(
+          const currentToken = editToken || (currentAnswers as any)?.editToken || newProfile.editToken;
+
+          const returnedToken = await saveEvaluation(
             targetId,
             newProfile,
             currentAnswers,
             isCompleted ? 'completed' : 'in_progress',
             newStep,
             collectionPath,
-            qId
+            qId,
+            currentToken
           );
+          
+          if (returnedToken && returnedToken !== editToken) {
+            setEditToken(returnedToken);
+            localStorage.setItem('fhons_edit_token', returnedToken);
+          }
           setSyncStatus('synced');
         } catch (err) {
           console.error('Error auto-saving to Firestore:', err);
@@ -168,7 +181,7 @@ export default function App() {
     saveState(updatedProfile, firstStep, qId, newId);
   };
 
-  const handleLoadEvaluation = (evalDoc: EvaluationDocument) => {
+  const handleLoadEvaluation = (evalDoc: EvaluationDocument, isEditing: boolean = false) => {
     const isPerfil = evalDoc.questionnaireId === 'perfil_profesional' || evalDoc.answers?.cargo !== undefined;
     const qId: 'servicio_al_cliente' | 'perfil_profesional' = isPerfil ? 'perfil_profesional' : 'servicio_al_cliente';
     
@@ -176,19 +189,30 @@ export default function App() {
     setProfile(evalDoc.profile);
     setEvaluationId(evalDoc.id);
 
+    const token = evalDoc.editToken || evalDoc.answers?.editToken || evalDoc.profile?.editToken;
+    if (token) {
+      setEditToken(token);
+      localStorage.setItem('fhons_edit_token', token);
+    }
+
     if (isPerfil) {
       setPerfilAnswers(evalDoc.answers as PerfilProfesionalAnswers);
-      const stepToGo: ActiveStep = evalDoc.status === 'completed' 
-        ? 'perfil_summary' 
-        : (evalDoc.currentStep as ActiveStep || 'perfil_section1');
+      // When editing is requested, ALWAYS bring user to section 1 of the form to edit
+      const stepToGo: ActiveStep = isEditing
+        ? 'perfil_section1'
+        : (evalDoc.status === 'completed' 
+            ? 'perfil_summary' 
+            : (evalDoc.currentStep as ActiveStep || 'perfil_section1'));
       setActiveStep(stepToGo);
       localStorage.setItem('fhons_perfil_answers', JSON.stringify(evalDoc.answers));
       localStorage.setItem('fhons_step', stepToGo);
     } else {
       setAnswers(evalDoc.answers as QuestionnaireAnswers);
-      const stepToGo: ActiveStep = evalDoc.status === 'completed' 
-        ? 'summary' 
-        : (evalDoc.currentStep as ActiveStep || 'section1');
+      const stepToGo: ActiveStep = isEditing
+        ? 'section1'
+        : (evalDoc.status === 'completed' 
+            ? 'summary' 
+            : (evalDoc.currentStep as ActiveStep || 'section1'));
       setActiveStep(stepToGo);
       localStorage.setItem('fhons_answers', JSON.stringify(evalDoc.answers));
       localStorage.setItem('fhons_step', stepToGo);
@@ -407,6 +431,7 @@ export default function App() {
     setPerfilAnswers(INITIAL_PERFIL_ANSWERS);
     setActiveStep('welcome');
     setEvaluationId('');
+    setEditToken('');
     setSyncStatus('local');
     try {
       localStorage.removeItem('fhons_profile');
@@ -414,6 +439,7 @@ export default function App() {
       localStorage.removeItem('fhons_perfil_answers');
       localStorage.removeItem('fhons_step');
       localStorage.removeItem('fhons_evaluation_id');
+      localStorage.removeItem('fhons_edit_token');
     } catch (e) {
       console.error('Error clearing localStorage', e);
     }
@@ -520,6 +546,7 @@ export default function App() {
                 answers={adminEvalToView.answers}
                 onReset={() => setViewMode('admin_dashboard')}
                 readOnly={true}
+                editToken={adminEvalToView.editToken || adminEvalToView.answers?.editToken || adminEvalToView.profile?.editToken}
               />
             ) : (
               <SummaryScreen
@@ -649,6 +676,11 @@ export default function App() {
             profile={profile}
             answers={perfilAnswers}
             onReset={handleReset}
+            onEdit={() => {
+              setActiveStep('perfil_section1');
+              saveState(profile, 'perfil_section1');
+            }}
+            editToken={editToken || perfilAnswers.editToken || profile.editToken}
           />
         )}
       </main>

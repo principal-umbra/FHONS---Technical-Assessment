@@ -27,7 +27,10 @@ import {
   Tag,
   Compass,
   Smile,
-  MessageSquare
+  MessageSquare,
+  Key,
+  Copy,
+  Pencil
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -35,11 +38,23 @@ interface SummaryScreenPerfilProps {
   profile: UserProfile;
   answers: PerfilProfesionalAnswers;
   onReset: () => void;
+  onEdit?: () => void;
   readOnly?: boolean;
+  editToken?: string;
 }
 
-export default function SummaryScreenPerfil({ profile, answers, onReset, readOnly = false }: SummaryScreenPerfilProps) {
+export default function SummaryScreenPerfil({ 
+  profile, 
+  answers, 
+  onReset, 
+  onEdit, 
+  readOnly = false,
+  editToken 
+}: SummaryScreenPerfilProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+
+  const activeToken = editToken || answers.editToken || profile.editToken;
 
   // Generate markdown report for webmasters
   const generateMarkdownReport = () => {
@@ -47,6 +62,7 @@ export default function SummaryScreenPerfil({ profile, answers, onReset, readOnl
     report += `**Nombre y Apellido:** ${profile.name}\n`;
     report += `**Correo Corporativo:** ${profile.email}\n`;
     report += `**Fecha de Registro:** ${profile.date}\n`;
+    report += `**Token de Edición:** ${activeToken || 'N/A'}\n`;
     report += `**Cargo:** ${answers.cargo || 'N/A'}\n`;
     report += `**Desde cuándo trabaja en FHONS:** ${answers.fechaIngreso || 'N/A'}\n`;
     report += `**Años de experiencia:** ${answers.aniosExperiencia || 'N/A'}\n`;
@@ -182,6 +198,79 @@ export default function SummaryScreenPerfil({ profile, answers, onReset, readOnl
           )}
         </div>
       </div>
+
+      {/* Token de Edición Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-r from-amber-50 via-amber-50/80 to-orange-50/60 border-2 border-amber-300/80 rounded-3xl p-6 md:p-7 shadow-lg shadow-amber-500/5 relative overflow-hidden"
+        id="token-edicion-summary-card"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                TOKEN DE EDICIÓN EXCLUSIVO
+              </span>
+              <span className="text-xs text-amber-800 font-semibold font-mono">
+                Guarda este código
+              </span>
+            </div>
+            
+            <h3 className="text-lg md:text-xl font-bold text-slate-900 font-display flex items-center gap-2">
+              <Key className="text-amber-600 shrink-0" size={20} />
+              Código para Modificar o Completar tu Perfil
+            </h3>
+            
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Con tu correo institucional (<span className="font-bold text-slate-850">{profile.email}</span>) y este código podrás volver a ingresar en cualquier momento desde la pantalla de inicio para modificar tus datos o completar secciones que hayas dejado pendientes.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto shrink-0">
+            {/* Token Badge */}
+            <div className="flex items-center bg-white px-4 py-2.5 rounded-2xl border-2 border-amber-300 shadow-sm justify-between gap-3 min-w-[200px]">
+              <div>
+                <span className="text-[9px] font-mono font-bold text-slate-400 block uppercase tracking-wider">
+                  Tu Token
+                </span>
+                <span className="font-mono text-base md:text-lg font-black text-slate-900 tracking-wider select-all">
+                  {activeToken || 'FH-PENDIENTE'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeToken) {
+                    navigator.clipboard.writeText(activeToken);
+                    setCopiedToken(true);
+                    setTimeout(() => setCopiedToken(false), 2000);
+                  }
+                }}
+                className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-amber-200"
+                title="Copiar Token"
+                id="copy-token-btn"
+              >
+                {copiedToken ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                <span>{copiedToken ? '¡Copiado!' : 'Copiar'}</span>
+              </button>
+            </div>
+
+            {/* Direct Edit Button */}
+            {!readOnly && onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="px-5 py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-slate-900/10"
+                id="btn-edit-profile-from-summary"
+              >
+                <Pencil size={14} />
+                Editar Ficha
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.div>
 
       {/* Main Profile Showcase Card (As it appears on FHONS Official Website) */}
       <motion.div

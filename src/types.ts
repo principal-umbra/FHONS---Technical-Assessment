@@ -8,6 +8,7 @@ export interface UserProfile {
   email: string;
   date: string;
   acceptedConsent: boolean;
+  editToken?: string;
 }
 
 export interface Section1Answers {
@@ -141,6 +142,7 @@ export interface PerfilProfesionalAnswers {
   fotoPreferencia: 'tengo_foto' | 'coordinar_sesion' | '';
   fotoUrl?: string;
   restriccionesPrivacidad: string;
+  editToken?: string;
 }
 
 export interface Questionnaire {

@@ -18,7 +18,7 @@ export default function AdminUsersList({ questionnaire, onUserSelect }: AdminUse
     completedCount: number;
     inProgressCount: number;
     lastEval: string;
-    lastStatus: 'in_progress' | 'completed';
+    lastStatus: 'pending' | 'in_progress' | 'abierto_pendiente' | 'completed';
   }>>([]);
 
   useEffect(() => {

@@ -145,6 +145,32 @@ export interface PerfilProfesionalAnswers {
   editToken?: string;
 }
 
+export interface QuestionnaireAssignment {
+  id: string; // usually `${cleanEmail}_${questionnaireId}`
+  agentEmail: string;
+  agentName?: string;
+  questionnaireId: string;
+  questionnaireTitle?: string;
+  assignedAt: string;
+  assignedBy?: string;
+  status: 'pending' | 'abierto_pendiente' | 'in_progress' | 'completed';
+  notes?: string;
+  deadline?: string;
+  scorePercentage?: number;
+  attemptsCount?: number;
+}
+
+export interface DocumentQuizSubmission {
+  readingConfirmed: boolean;
+  scorePercentage: number;
+  passed: boolean;
+  submittedAt: string;
+  finalSignature?: string;
+  acceptedCommitment?: boolean;
+  attemptsCount: number;
+  status: 'abierto_pendiente' | 'completed';
+}
+
 export interface Questionnaire {
   id: string;
   title: string;
@@ -152,12 +178,18 @@ export interface Questionnaire {
   collectionPath: string;
   uiPath: string;
   createdAt?: string;
+  category?: string;
+  status?: 'active' | 'draft' | 'archived';
+  estimatedMinutes?: number;
+  icon?: string;
+  tags?: string[];
 }
 
 export type ActiveStep = 
   | 'welcome' 
   | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'summary'
-  | 'perfil_section1' | 'perfil_section2' | 'perfil_section3' | 'perfil_section4' | 'perfil_summary';
+  | 'perfil_section1' | 'perfil_section2' | 'perfil_section3' | 'perfil_section4' | 'perfil_summary'
+  | 'doc_quiz';
 
 export interface PillarMetadata {
   id: string;

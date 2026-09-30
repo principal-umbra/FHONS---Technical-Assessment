@@ -5,19 +5,131 @@
 
 import { UserProfile, QuestionnaireAnswers } from '../../../types';
 import { PILLARS, PROCESS_STAGES } from './data';
-import { Download, Clipboard, RefreshCw, Sparkles, Award, FileText, Check } from 'lucide-react';
+import { Download, Clipboard, RefreshCw, Sparkles, Award, FileText, Check, Key, Copy, Edit3, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getEvaluation, listEvaluations, generateEditToken, saveEvaluation } from '../../../lib/firebase';
 
 interface SummaryScreenProps {
   profile: UserProfile;
   answers: QuestionnaireAnswers;
   onReset: () => void;
   readOnly?: boolean;
+  editToken?: string;
+  onEdit?: () => void;
+  evaluationId?: string;
 }
 
-export default function SummaryScreen({ profile, answers, onReset, readOnly = false }: SummaryScreenProps) {
+export default function SummaryScreen({ 
+  profile, 
+  answers, 
+  onReset, 
+  readOnly = false,
+  editToken,
+  onEdit,
+  evaluationId
+}: SummaryScreenProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+
+  const initialToken = (
+    editToken || 
+    (answers as any).editToken || 
+    profile.editToken || 
+    (typeof window !== 'undefined' ? localStorage.getItem('fhons_edit_token') : '') || 
+    ''
+  ).trim();
+
+  const [activeToken, setActiveToken] = useState<string>(initialToken);
+  const [isLoadingToken, setIsLoadingToken] = useState<boolean>(!initialToken);
+
+  // Automatically resolve token from Firestore if missing from initial props
+  useEffect(() => {
+    const directToken = (
+      editToken || 
+      (answers as any).editToken || 
+      profile.editToken || 
+      localStorage.getItem('fhons_edit_token') || 
+      ''
+    ).trim();
+
+    if (directToken) {
+      setActiveToken(directToken);
+      setIsLoadingToken(false);
+      return;
+    }
+
+    let isSubscribed = true;
+    setIsLoadingToken(true);
+
+    const resolveToken = async () => {
+      try {
+        const targetEvalId = evaluationId || localStorage.getItem('fhons_evaluation_id');
+        
+        // 1. Try fetching by evaluation ID
+        if (targetEvalId) {
+          const docItem = await getEvaluation(targetEvalId, 'evaluations_servicio_al_cliente');
+          if (docItem && isSubscribed) {
+            const foundToken = docItem.editToken || docItem.answers?.editToken || docItem.profile?.editToken;
+            if (foundToken) {
+              setActiveToken(foundToken);
+              localStorage.setItem('fhons_edit_token', foundToken);
+              setIsLoadingToken(false);
+              return;
+            }
+          }
+        }
+
+        // 2. Try fetching by user email in evaluations_servicio_al_cliente
+        if (profile?.email) {
+          const docs = await listEvaluations(profile.email.trim(), 'evaluations_servicio_al_cliente');
+          if (docs.length > 0 && isSubscribed) {
+            const foundToken = docs[0].editToken || docs[0].answers?.editToken || docs[0].profile?.editToken;
+            if (foundToken) {
+              setActiveToken(foundToken);
+              localStorage.setItem('fhons_edit_token', foundToken);
+              setIsLoadingToken(false);
+              return;
+            }
+          }
+        }
+
+        // 3. Fallback: generate and persist
+        if (isSubscribed) {
+          const newToken = generateEditToken();
+          setActiveToken(newToken);
+          localStorage.setItem('fhons_edit_token', newToken);
+          setIsLoadingToken(false);
+
+          if (targetEvalId) {
+            saveEvaluation(
+              targetEvalId,
+              profile,
+              answers,
+              'completed',
+              'summary',
+              'evaluations_servicio_al_cliente',
+              'servicio_al_cliente',
+              newToken
+            ).catch(console.error);
+          }
+        }
+      } catch (err) {
+        console.error('Error auto-resolving editToken in SummaryScreen:', err);
+        if (isSubscribed) {
+          const fallbackToken = generateEditToken();
+          setActiveToken(fallbackToken);
+          setIsLoadingToken(false);
+        }
+      }
+    };
+
+    resolveToken();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [editToken, (answers as any).editToken, profile.editToken, evaluationId, profile?.email]);
 
   // Calculate average pillar rating
   const averageRating = (
@@ -132,6 +244,99 @@ export default function SummaryScreen({ profile, answers, onReset, readOnly = fa
           <span><strong>Fecha:</strong> {profile.date}</span>
         </div>
       </div>
+
+      {/* Token de Edición Card */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-r from-amber-50 via-amber-50/80 to-orange-50/60 border-2 border-amber-300/80 rounded-3xl p-6 md:p-7 shadow-lg shadow-amber-500/5 relative overflow-hidden"
+        id="token-edicion-summary-servicio"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                TOKEN DE EDICIÓN EXCLUSIVO
+              </span>
+              <span className="text-xs text-amber-800 font-semibold font-mono">
+                Guarda este código
+              </span>
+            </div>
+            
+            <h3 className="text-lg md:text-xl font-bold text-slate-900 font-display flex items-center gap-2">
+              <Key className="text-amber-600 shrink-0" size={20} />
+              Código para Modificar o Completar tu Evaluación
+            </h3>
+            
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Con tu correo institucional (<span className="font-bold text-slate-900">{profile.email}</span>) y este código podrás volver a ingresar en cualquier momento desde la pantalla de inicio para modificar tus respuestas o continuar tu evaluación.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto shrink-0">
+            {/* Token Badge */}
+            <div 
+              onClick={() => {
+                if (activeToken) {
+                  navigator.clipboard.writeText(activeToken);
+                  setCopiedToken(true);
+                  setTimeout(() => setCopiedToken(false), 2500);
+                }
+              }}
+              className="flex items-center bg-white px-4 py-2.5 rounded-2xl border-2 border-amber-300 shadow-sm justify-between gap-3 min-w-[210px] cursor-pointer hover:border-amber-400 hover:shadow-md transition duration-150 group"
+              title="Haz clic para copiar el token al portapapeles"
+            >
+              <div>
+                <span className="text-[9px] font-mono font-bold text-slate-400 block uppercase tracking-wider group-hover:text-amber-700 transition">
+                  Tu Token (Clic para copiar)
+                </span>
+                <span className="font-mono text-base md:text-lg font-black text-slate-900 tracking-wider select-all flex items-center gap-1.5">
+                  {isLoadingToken ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-sans font-medium py-1">
+                      <Loader2 size={14} className="animate-spin text-amber-600" />
+                      Cargando código...
+                    </span>
+                  ) : (
+                    activeToken || 'FH-000000'
+                  )}
+                </span>
+              </div>
+              <button
+                type="button"
+                disabled={isLoadingToken || !activeToken}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeToken) {
+                    navigator.clipboard.writeText(activeToken);
+                    setCopiedToken(true);
+                    setTimeout(() => setCopiedToken(false), 2500);
+                  }
+                }}
+                className="p-2.5 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 text-amber-900 rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-amber-300 shadow-xs"
+                title="Copiar Token automáticamente"
+                id="copy-token-servicio-btn"
+              >
+                {copiedToken ? <Check size={14} className="text-emerald-700" /> : <Copy size={14} />}
+                <span>{copiedToken ? '¡Copiado!' : 'Copiar'}</span>
+              </button>
+            </div>
+
+            {/* Direct Edit Button */}
+            {!readOnly && onEdit && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl transition cursor-pointer flex items-center justify-center gap-2 text-xs font-bold shadow-md shadow-amber-600/20"
+                title="Editar este formulario ahora"
+                id="direct-edit-servicio-btn"
+              >
+                <Edit3 size={15} />
+                <span>Editar Formulario</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </motion.div>
 
       {/* Action panel */}
       {!readOnly && (

@@ -3,11 +3,69 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { ActiveStep, UserProfile, QuestionnaireAnswers, PerfilProfesionalAnswers } from './types';
 import { INITIAL_ANSWERS } from './components/questionnaires/servicio_al_cliente/data';
 import { INITIAL_PERFIL_ANSWERS, PERFIL_STEPS_METADATA } from './components/questionnaires/perfil_profesional/data';
-import { saveEvaluation, EvaluationDocument } from './lib/firebase';
+import { saveEvaluation, getEvaluation, generateEditToken, EvaluationDocument, DEFAULT_QUESTIONNAIRES } from './lib/firebase';
+import DocumentReportSummary from './components/questionnaires/DocumentReportSummary';
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('App ErrorBoundary caught error:', error, errorInfo);
+  }
+
+  handleReset = () => {
+    localStorage.removeItem('fhons_step');
+    this.setState({ hasError: false, error: null });
+    window.location.href = '/';
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-slate-800 border border-slate-700 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-2xl font-bold">
+              !
+            </div>
+            <h2 className="text-xl font-bold font-display text-white">
+              Se detectó una discrepancia en la vista
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Ocurrió un evento inesperado al cargar el paso. Puedes volver al panel principal para continuar con tus cuestionarios de forma segura.
+            </p>
+            <button
+              onClick={this.handleReset}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Volver al Menú Principal
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Subcomponents - Servicio al Cliente
 import WelcomeScreen from './components/WelcomeScreen';
@@ -26,6 +84,13 @@ import SectionHabilidadesLogros from './components/questionnaires/perfil_profesi
 import SectionPasionCultura from './components/questionnaires/perfil_profesional/SectionPasionCultura';
 import SectionPresenciaPrivacidad from './components/questionnaires/perfil_profesional/SectionPresenciaPrivacidad';
 import SummaryScreenPerfil from './components/questionnaires/perfil_profesional/SummaryScreenPerfil';
+
+// Subcomponents - Procesos y Protocolos (5 Nuevos Cuestionarios)
+import ProcesoRetroalimentacionView from './components/questionnaires/proceso_retroalimentacion/ProcesoRetroalimentacionView';
+import ProcesoGuardiaView from './components/questionnaires/proceso_guardia/ProcesoGuardiaView';
+import ProtocoloTicketsView from './components/questionnaires/protocolo_tickets/ProtocoloTicketsView';
+import ProtocoloMigracionesView from './components/questionnaires/protocolo_migraciones/ProtocoloMigracionesView';
+import ProtocoloVisitasView from './components/questionnaires/protocolo_visitas/ProtocoloVisitasView';
 
 // Admin components
 import LoginScreen from './components/LoginScreen';
@@ -48,10 +113,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'user' | 'admin_login' | 'admin_dashboard' | 'admin_view_eval'>('user');
   const [adminEvalToView, setAdminEvalToView] = useState<EvaluationDocument | null>(null);
   
-  // Active questionnaire selector: 'servicio_al_cliente' or 'perfil_profesional'
-  const [selectedQuestionnaireId, setSelectedQuestionnaireId] = useState<'servicio_al_cliente' | 'perfil_profesional'>('servicio_al_cliente');
+  // Active questionnaire selector: support all 7 questionnaires
+  const [selectedQuestionnaireId, setSelectedQuestionnaireId] = useState<string>('servicio_al_cliente');
   
-  const [activeStep, setActiveStep] = useState<ActiveStep>('welcome');
+  const [activeStep, setActiveStep] = useState<ActiveStep | 'doc_quiz'>('welcome');
   const [profile, setProfile] = useState<UserProfile>({
     name: '',
     email: '',
@@ -64,6 +129,12 @@ export default function App() {
 
   // State for Perfil Profesional
   const [perfilAnswers, setPerfilAnswers] = useState<PerfilProfesionalAnswers>(INITIAL_PERFIL_ANSWERS);
+
+  // State for Document-based Questionnaires (5 nuevos)
+  const [docQuizAnswers, setDocQuizAnswers] = useState<any>(null);
+  const [docQuizStatus, setDocQuizStatus] = useState<'pending' | 'abierto_pendiente' | 'completed'>('pending');
+  const [docQuizScore, setDocQuizScore] = useState<number>(0);
+  const [docQuizSignature, setDocQuizSignature] = useState<string>('');
 
   const [evaluationId, setEvaluationId] = useState<string>('');
   const [editToken, setEditToken] = useState<string>('');
@@ -81,7 +152,7 @@ export default function App() {
       const storedEvalId = localStorage.getItem('fhons_evaluation_id');
       const storedToken = localStorage.getItem('fhons_edit_token');
 
-      if (storedQId === 'perfil_profesional' || storedQId === 'servicio_al_cliente') {
+      if (storedQId) {
         setSelectedQuestionnaireId(storedQId);
       }
       if (storedProfile) {
@@ -93,8 +164,40 @@ export default function App() {
       if (storedPerfilAnswers) {
         setPerfilAnswers(JSON.parse(storedPerfilAnswers));
       }
+
+      // Sanitize storedStep to prevent blank screen states
+      const docQuizIds = [
+        'proceso_retroalimentacion',
+        'proceso_guardia',
+        'protocolo_tickets',
+        'protocolo_migraciones',
+        'protocolo_visitas'
+      ];
+
       if (storedStep) {
-        setActiveStep(storedStep as ActiveStep);
+        if (storedStep === 'doc_quiz') {
+          if (storedQId && docQuizIds.includes(storedQId)) {
+            setActiveStep('doc_quiz');
+          } else {
+            setActiveStep('welcome');
+          }
+        } else if (storedStep.startsWith('perfil_')) {
+          if (storedQId === 'perfil_profesional') {
+            setActiveStep(storedStep as ActiveStep);
+          } else {
+            setActiveStep('welcome');
+          }
+        } else if (storedStep.startsWith('section') || storedStep === 'summary') {
+          if (!storedQId || storedQId === 'servicio_al_cliente') {
+            setActiveStep(storedStep as ActiveStep);
+          } else {
+            setActiveStep('welcome');
+          }
+        } else if (storedStep === 'welcome') {
+          setActiveStep('welcome');
+        } else {
+          setActiveStep('welcome');
+        }
       }
       if (storedEvalId) {
         setEvaluationId(storedEvalId);
@@ -102,6 +205,18 @@ export default function App() {
       }
       if (storedToken) {
         setEditToken(storedToken);
+      } else if (storedEvalId) {
+        // Auto-recover token from Firestore if evaluation ID exists but token was lost locally
+        const col = storedQId === 'perfil_profesional' 
+          ? 'evaluations_perfil_profesional' 
+          : (docQuizIds.includes(storedQId || '') ? `evaluations_${storedQId}` : 'evaluations_servicio_al_cliente');
+        getEvaluation(storedEvalId, col).then((docData) => {
+          const docToken = docData?.editToken || docData?.answers?.editToken || docData?.profile?.editToken;
+          if (docToken) {
+            setEditToken(docToken);
+            localStorage.setItem('fhons_edit_token', docToken);
+          }
+        }).catch(console.error);
       }
     } catch (e) {
       console.error('Error loading data from localStorage', e);
@@ -112,7 +227,7 @@ export default function App() {
   const saveState = async (
     newProfile: UserProfile,
     newStep: ActiveStep,
-    qId: 'servicio_al_cliente' | 'perfil_profesional' = selectedQuestionnaireId,
+    qId: string = selectedQuestionnaireId,
     activeId?: string,
     overrideAnswers?: QuestionnaireAnswers | PerfilProfesionalAnswers
   ) => {
@@ -151,9 +266,13 @@ export default function App() {
             currentToken
           );
           
-          if (returnedToken && returnedToken !== editToken) {
+          if (returnedToken) {
             setEditToken(returnedToken);
             localStorage.setItem('fhons_edit_token', returnedToken);
+            setProfile(prev => ({ ...prev, editToken: returnedToken }));
+            if (isPerfil) {
+              setPerfilAnswers(prev => ({ ...prev, editToken: returnedToken }));
+            }
           }
           setSyncStatus('synced');
         } catch (err) {
@@ -168,24 +287,49 @@ export default function App() {
 
   const handleStart = (
     updatedProfile: UserProfile, 
-    qId: 'servicio_al_cliente' | 'perfil_profesional' = selectedQuestionnaireId,
+    qId: string = selectedQuestionnaireId,
     existingId?: string
   ) => {
     const newId = existingId || ('eval_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9));
+    const token = editToken || updatedProfile.editToken || generateEditToken();
+    const profileWithToken = { ...updatedProfile, editToken: token };
+
     setEvaluationId(newId);
-    setProfile(updatedProfile);
+    setProfile(profileWithToken);
+    setEditToken(token);
+    localStorage.setItem('fhons_edit_token', token);
     setSelectedQuestionnaireId(qId);
+    localStorage.setItem('fhons_questionnaire_id', qId);
+
+    const isDocQuiz = [
+      'proceso_retroalimentacion',
+      'proceso_guardia',
+      'protocolo_tickets',
+      'protocolo_migraciones',
+      'protocolo_visitas'
+    ].includes(qId);
+
+    if (isDocQuiz) {
+      setActiveStep('doc_quiz');
+      setDocQuizAnswers(null);
+      setDocQuizStatus('pending');
+      setDocQuizScore(0);
+      setDocQuizSignature(updatedProfile.name || '');
+      localStorage.setItem('fhons_step', 'doc_quiz');
+      return;
+    }
 
     const firstStep: ActiveStep = qId === 'perfil_profesional' ? 'perfil_section1' : 'section1';
     setActiveStep(firstStep);
-    saveState(updatedProfile, firstStep, qId, newId);
+    saveState(profileWithToken, firstStep, qId as any, newId);
   };
 
   const handleLoadEvaluation = (evalDoc: EvaluationDocument, isEditing: boolean = false) => {
-    const isPerfil = evalDoc.questionnaireId === 'perfil_profesional' || evalDoc.answers?.cargo !== undefined;
-    const qId: 'servicio_al_cliente' | 'perfil_profesional' = isPerfil ? 'perfil_profesional' : 'servicio_al_cliente';
+    const qId = evalDoc.questionnaireId || 
+      (evalDoc.answers?.cargo !== undefined ? 'perfil_profesional' : 'servicio_al_cliente');
     
     setSelectedQuestionnaireId(qId);
+    localStorage.setItem('fhons_questionnaire_id', qId);
     setProfile(evalDoc.profile);
     setEvaluationId(evalDoc.id);
 
@@ -195,7 +339,26 @@ export default function App() {
       localStorage.setItem('fhons_edit_token', token);
     }
 
-    if (isPerfil) {
+    const isDocQuiz = [
+      'proceso_retroalimentacion',
+      'proceso_guardia',
+      'protocolo_tickets',
+      'protocolo_migraciones',
+      'protocolo_visitas'
+    ].includes(qId);
+
+    if (isDocQuiz) {
+      setDocQuizAnswers(evalDoc.answers);
+      setDocQuizStatus(evalDoc.status as any || 'pending');
+      setDocQuizScore(evalDoc.answers?.scorePercentage || 0);
+      setDocQuizSignature(evalDoc.answers?.finalSignature || evalDoc.profile?.name || '');
+      setActiveStep('doc_quiz');
+      localStorage.setItem('fhons_step', 'doc_quiz');
+      setSyncStatus('synced');
+      return;
+    }
+
+    if (qId === 'perfil_profesional') {
       setPerfilAnswers(evalDoc.answers as PerfilProfesionalAnswers);
       // When editing is requested, ALWAYS bring user to section 1 of the form to edit
       const stepToGo: ActiveStep = isEditing
@@ -218,7 +381,6 @@ export default function App() {
       localStorage.setItem('fhons_step', stepToGo);
     }
 
-    localStorage.setItem('fhons_questionnaire_id', qId);
     localStorage.setItem('fhons_profile', JSON.stringify(evalDoc.profile));
     localStorage.setItem('fhons_evaluation_id', evalDoc.id);
     setSyncStatus('synced');
@@ -447,6 +609,7 @@ export default function App() {
 
   const isPerfil = selectedQuestionnaireId === 'perfil_profesional';
   const isPerfilStep = activeStep.startsWith('perfil_');
+  const currentQMeta = DEFAULT_QUESTIONNAIRES.find(q => q.id === selectedQuestionnaireId);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans antialiased text-slate-900 selection:bg-slate-200" id="app-root-container">
@@ -458,15 +621,15 @@ export default function App() {
             {isPerfil ? (
               <Globe size={16} className="text-white" />
             ) : (
-              <span className="text-white font-bold text-xs">S</span>
+              <span className="text-white font-bold text-xs">{currentQMeta ? currentQMeta.title.charAt(0) : 'S'}</span>
             )}
           </div>
           <div>
             <span className="text-lg font-bold tracking-tight text-slate-850 block font-display">
-              {isPerfil ? 'Perfil Profesional FHONS' : 'Soporte TI de Excelencia'}
+              {currentQMeta ? currentQMeta.title : (isPerfil ? 'Perfil Profesional FHONS' : 'Soporte TI de Excelencia')}
             </span>
-            <span className="text-[10px] text-slate-400 font-medium block">
-              {isPerfil ? 'Ficha para Website Oficial de la Compañía' : 'Cuestionario de Autoevaluación Introspectivo'}
+            <span className="text-[10px] text-slate-400 font-medium block truncate max-w-[280px] sm:max-w-[450px]">
+              {currentQMeta ? currentQMeta.description : (isPerfil ? 'Ficha para Website Oficial de la Compañía' : 'Cuestionario de Autoevaluación Introspectivo')}
             </span>
           </div>
         </div>
@@ -513,7 +676,8 @@ export default function App() {
 
       {/* Primary router container */}
       <main className="flex-1 py-4 md:py-8 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto flex flex-col justify-center" id="primary-view-router">
-        {viewMode === 'admin_login' && (
+        <ErrorBoundary>
+          {viewMode === 'admin_login' && (
           <LoginScreen
             onBack={() => setViewMode('user')}
             onLoginSuccess={() => setViewMode('admin_dashboard')}
@@ -548,11 +712,17 @@ export default function App() {
                 readOnly={true}
                 editToken={adminEvalToView.editToken || adminEvalToView.answers?.editToken || adminEvalToView.profile?.editToken}
               />
-            ) : (
+            ) : adminEvalToView.questionnaireId === 'servicio_al_cliente' ? (
               <SummaryScreen
                 profile={adminEvalToView.profile}
                 answers={adminEvalToView.answers}
                 onReset={() => setViewMode('admin_dashboard')}
+                readOnly={true}
+              />
+            ) : (
+              <DocumentReportSummary
+                evalDoc={adminEvalToView}
+                onBack={() => setViewMode('admin_dashboard')}
                 readOnly={true}
               />
             )}
@@ -576,8 +746,114 @@ export default function App() {
           />
         )}
 
+        {/* User View: Document-Based Questionnaires (5 nuevos procesos y protocolos) */}
+        {viewMode === 'user' && activeStep === 'doc_quiz' && (
+          <div className="w-full">
+            {selectedQuestionnaireId === 'proceso_retroalimentacion' ? (
+              <ProcesoRetroalimentacionView
+                profile={profile}
+                evaluationId={evaluationId}
+                initialAnswers={docQuizAnswers}
+                initialStatus={docQuizStatus}
+                initialScore={docQuizScore}
+                initialSignature={docQuizSignature}
+                initialToken={editToken}
+                onBackToHub={() => {
+                  setActiveStep('welcome');
+                  localStorage.setItem('fhons_step', 'welcome');
+                }}
+                onCompleted={() => {
+                  setSyncStatus('synced');
+                }}
+              />
+            ) : selectedQuestionnaireId === 'proceso_guardia' ? (
+              <ProcesoGuardiaView
+                profile={profile}
+                evaluationId={evaluationId}
+                initialAnswers={docQuizAnswers}
+                initialStatus={docQuizStatus}
+                initialScore={docQuizScore}
+                initialSignature={docQuizSignature}
+                initialToken={editToken}
+                onBackToHub={() => {
+                  setActiveStep('welcome');
+                  localStorage.setItem('fhons_step', 'welcome');
+                }}
+                onCompleted={() => {
+                  setSyncStatus('synced');
+                }}
+              />
+            ) : selectedQuestionnaireId === 'protocolo_tickets' ? (
+              <ProtocoloTicketsView
+                profile={profile}
+                evaluationId={evaluationId}
+                initialAnswers={docQuizAnswers}
+                initialStatus={docQuizStatus}
+                initialScore={docQuizScore}
+                initialSignature={docQuizSignature}
+                initialToken={editToken}
+                onBackToHub={() => {
+                  setActiveStep('welcome');
+                  localStorage.setItem('fhons_step', 'welcome');
+                }}
+                onCompleted={() => {
+                  setSyncStatus('synced');
+                }}
+              />
+            ) : selectedQuestionnaireId === 'protocolo_migraciones' ? (
+              <ProtocoloMigracionesView
+                profile={profile}
+                evaluationId={evaluationId}
+                initialAnswers={docQuizAnswers}
+                initialStatus={docQuizStatus}
+                initialScore={docQuizScore}
+                initialSignature={docQuizSignature}
+                initialToken={editToken}
+                onBackToHub={() => {
+                  setActiveStep('welcome');
+                  localStorage.setItem('fhons_step', 'welcome');
+                }}
+                onCompleted={() => {
+                  setSyncStatus('synced');
+                }}
+              />
+            ) : selectedQuestionnaireId === 'protocolo_visitas' ? (
+              <ProtocoloVisitasView
+                profile={profile}
+                evaluationId={evaluationId}
+                initialAnswers={docQuizAnswers}
+                initialStatus={docQuizStatus}
+                initialScore={docQuizScore}
+                initialSignature={docQuizSignature}
+                initialToken={editToken}
+                onBackToHub={() => {
+                  setActiveStep('welcome');
+                  localStorage.setItem('fhons_step', 'welcome');
+                }}
+                onCompleted={() => {
+                  setSyncStatus('synced');
+                }}
+              />
+            ) : (
+              <WelcomeScreen
+                onStart={handleStart}
+                onLoadEvaluation={handleLoadEvaluation}
+                onAdminLogin={() => {
+                  setViewMode('admin_login');
+                }}
+                initialProfile={profile}
+                selectedQuestionnaireId={selectedQuestionnaireId}
+                onSelectQuestionnaire={(id) => {
+                  setSelectedQuestionnaireId(id);
+                  localStorage.setItem('fhons_questionnaire_id', id);
+                }}
+              />
+            )}
+          </div>
+        )}
+
         {/* User View: Servicio al Cliente Questions */}
-        {viewMode === 'user' && !isPerfilStep && activeStep !== 'welcome' && activeStep !== 'summary' && (
+        {viewMode === 'user' && !isPerfilStep && activeStep !== 'welcome' && activeStep !== 'summary' && activeStep !== 'doc_quiz' && (
           <SectionContainer
             currentStep={activeStep}
             steps={SERVICIO_STEPS_METADATA}
@@ -630,6 +906,12 @@ export default function App() {
             profile={profile}
             answers={answers}
             onReset={handleReset}
+            onEdit={() => {
+              setActiveStep('section1');
+              saveState(profile, 'section1');
+            }}
+            editToken={editToken || (answers as any).editToken || profile.editToken}
+            evaluationId={evaluationId}
           />
         )}
 
@@ -681,8 +963,28 @@ export default function App() {
               saveState(profile, 'perfil_section1');
             }}
             editToken={editToken || perfilAnswers.editToken || profile.editToken}
+            evaluationId={evaluationId}
           />
         )}
+
+        {/* Fallback in case of any unhandled step state */}
+        {viewMode === 'user' && 
+          !['welcome', 'doc_quiz', 'summary', 'perfil_summary', 'section1', 'section2', 'section3', 'section4', 'section5', 'section6', 'perfil_section1', 'perfil_section2', 'perfil_section3', 'perfil_section4'].includes(activeStep) && (
+          <WelcomeScreen
+            onStart={handleStart}
+            onLoadEvaluation={handleLoadEvaluation}
+            onAdminLogin={() => {
+              setViewMode('admin_login');
+            }}
+            initialProfile={profile}
+            selectedQuestionnaireId={selectedQuestionnaireId}
+            onSelectQuestionnaire={(id) => {
+              setSelectedQuestionnaireId(id);
+              localStorage.setItem('fhons_questionnaire_id', id);
+            }}
+          />
+        )}
+        </ErrorBoundary>
       </main>
 
     </div>

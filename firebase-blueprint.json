@@ -25,7 +25,8 @@
         "status": { "type": "string", "enum": ["in_progress", "completed"] },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" },
-        "currentStep": { "type": "string" }
+        "currentStep": { "type": "string" },
+        "editToken": { "type": "string" }
       },
       "required": ["id", "questionnaireId", "profile", "status", "createdAt", "updatedAt"]
     },
@@ -41,7 +42,8 @@
         "status": { "type": "string", "enum": ["in_progress", "completed"] },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" },
-        "currentStep": { "type": "string" }
+        "currentStep": { "type": "string" },
+        "editToken": { "type": "string" }
       },
       "required": ["id", "questionnaireId", "profile", "status", "createdAt", "updatedAt"]
     },

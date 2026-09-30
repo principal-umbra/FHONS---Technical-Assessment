@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, EvaluationDocument, getQuestionnaires } from '../lib/firebase';
+import { db, EvaluationDocument, getQuestionnaires, getAllAssociatedEmails, normalizeEmail } from '../lib/firebase';
 import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { Loader2, FileText, CheckCircle, Clock, Trash2, Eye, FileBarChart2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Questionnaire } from '../types';
@@ -22,7 +22,7 @@ export default function AdminUserDetail({ email, questionnaire, onViewReport, on
   const fetchUserEvaluations = async () => {
     setLoading(true);
     try {
-      // Query STRICTLY the collection for the active questionnaire
+      // Query collection for the active questionnaire
       const qRef = query(
         collection(db, questionnaire.collectionPath), 
         orderBy('updatedAt', 'desc')
@@ -30,9 +30,11 @@ export default function AdminUserDetail({ email, questionnaire, onViewReport, on
       
       const snapshot = await getDocs(qRef);
       const data: EvaluationDocument[] = [];
+      const associated = getAllAssociatedEmails(email);
+
       snapshot.forEach((d) => {
         const evalItem = d.data() as EvaluationDocument;
-        if (evalItem.profile?.email && evalItem.profile.email.trim().toLowerCase() === email.trim().toLowerCase()) {
+        if (evalItem.profile?.email && associated.includes(normalizeEmail(evalItem.profile.email))) {
           data.push(evalItem);
         }
       });

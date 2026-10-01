@@ -158,6 +158,8 @@ export interface QuestionnaireAssignment {
   deadline?: string;
   scorePercentage?: number;
   attemptsCount?: number;
+  isOptional?: boolean; // Specific optional override for this agent
+  order?: number; // Specific order/sequence for this agent
 }
 
 export interface DocumentQuizSubmission {
@@ -183,6 +185,8 @@ export interface Questionnaire {
   estimatedMinutes?: number;
   icon?: string;
   tags?: string[];
+  isOptional?: boolean; // Global default: true if optional, false/undefined if mandatory
+  order?: number; // Global default display order
 }
 
 export type ActiveStep = 

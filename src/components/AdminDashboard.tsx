@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LogOut, 
@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Sparkles,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   UserCheck,
   Plus,
   Search,
@@ -233,6 +235,45 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
     }
   };
 
+  const handleToggleOptional = async (q: Questionnaire, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const updated = { ...q, isOptional: !q.isOptional };
+    setQuestionnaires(prev => prev.map(item => item.id === q.id ? updated : item));
+    try {
+      await saveQuestionnaire(updated);
+    } catch (err) {
+      console.error('Error toggling optional status:', err);
+      alert('Error al actualizar el estado opcional del cuestionario.');
+    }
+  };
+
+  const handleMoveOrder = async (qId: string, direction: 'up' | 'down', e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const currentList = [...questionnaires].sort((a, b) => {
+      const ordA = a.order ?? 999;
+      const ordB = b.order ?? 999;
+      if (ordA !== ordB) return ordA - ordB;
+      return a.title.localeCompare(b.title);
+    });
+
+    const idx = currentList.findIndex(q => q.id === qId);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= currentList.length) return;
+
+    const [movedItem] = currentList.splice(idx, 1);
+    currentList.splice(targetIdx, 0, movedItem);
+
+    const normalizedList = currentList.map((q, i) => ({ ...q, order: i + 1 }));
+    setQuestionnaires(normalizedList);
+
+    try {
+      await Promise.all(normalizedList.map(q => saveQuestionnaire(q)));
+    } catch (err) {
+      console.error('Error saving new questionnaire order:', err);
+    }
+  };
+
   // Aggregated global stats
   const totalGlobalEvaluations = Object.values(formStats).reduce((acc, s) => acc + s.total, 0);
   const totalGlobalCompleted = Object.values(formStats).reduce((acc, s) => acc + s.completed, 0);
@@ -241,8 +282,17 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
     ? Math.round((totalGlobalCompleted / totalGlobalEvaluations) * 100) 
     : 0;
 
-  // Filtered questionnaires
-  const filteredQuestionnaires = questionnaires.filter(q => {
+  // Sorted and filtered questionnaires by global order
+  const sortedQuestionnaires = useMemo(() => {
+    return [...questionnaires].sort((a, b) => {
+      const ordA = a.order ?? 999;
+      const ordB = b.order ?? 999;
+      if (ordA !== ordB) return ordA - ordB;
+      return a.title.localeCompare(b.title);
+    });
+  }, [questionnaires]);
+
+  const filteredQuestionnaires = sortedQuestionnaires.filter(q => {
     const matchesSearch = 
       q.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
       q.description.toLowerCase().includes(searchFilter.toLowerCase()) ||
@@ -499,14 +549,69 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
                                   <span className="text-[10px] font-bold uppercase tracking-wider font-mono text-slate-400">
                                     {q.category || 'Evaluación'}
                                   </span>
-                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60 font-mono">
-                                    <CheckCircle2 size={10} /> Activo
-                                  </span>
+                                  {stats.completed > 0 && stats.inProgress === 0 && stats.total === stats.completed ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 font-mono">
+                                      <CheckCircle2 size={10} className="text-emerald-600" /> Completado ({stats.completed})
+                                    </span>
+                                  ) : stats.completed > 0 ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-mono">
+                                      <Clock size={10} className="text-blue-600" /> {stats.completed} Completado{stats.completed > 1 ? 's' : ''} ({completionPct}%)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 font-mono">
+                                      <Layers size={10} className="text-slate-500" /> Activo para Asignar
+                                    </span>
+                                  )}
                                 </div>
                                 <h3 className="text-lg font-bold text-slate-900 font-display">
                                   {q.title}
                                 </h3>
                               </div>
+                            </div>
+
+                            {/* Order & Optional Controls */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {/* Order Controls */}
+                              <div className="flex items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200">
+                                <span className="text-[10px] font-mono font-bold px-2 text-slate-700" title="Orden general de visualización">
+                                  #{q.order ?? (sortedQuestionnaires.findIndex(item => item.id === q.id) + 1)}
+                                </span>
+                                <div className="flex flex-col border-l border-slate-200">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleMoveOrder(q.id, 'up', e)}
+                                    disabled={sortedQuestionnaires.findIndex(item => item.id === q.id) === 0}
+                                    className="p-0.5 hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-20 disabled:hover:bg-transparent rounded cursor-pointer transition"
+                                    title="Subir posición en el orden"
+                                  >
+                                    <ChevronUp size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleMoveOrder(q.id, 'down', e)}
+                                    disabled={sortedQuestionnaires.findIndex(item => item.id === q.id) === sortedQuestionnaires.length - 1}
+                                    className="p-0.5 hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-20 disabled:hover:bg-transparent rounded cursor-pointer transition"
+                                    title="Bajar posición en el orden"
+                                  >
+                                    <ChevronDown size={11} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Optional / Mandatory Toggle */}
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleOptional(q, e)}
+                                className={`px-2.5 py-1.5 rounded-xl text-[10px] font-mono font-bold uppercase transition flex items-center gap-1 cursor-pointer border shadow-2xs ${
+                                  q.isOptional
+                                    ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                                }`}
+                                title={q.isOptional ? "Cuestionario opcional. Clic para marcar como obligatorio." : "Cuestionario obligatorio. Clic para marcar como opcional."}
+                              >
+                                {q.isOptional ? <Tag size={10} className="text-amber-700" /> : <Shield size={10} className="text-slate-500" />}
+                                <span>{q.isOptional ? 'Opcional' : 'Obligatorio'}</span>
+                              </button>
                             </div>
                           </div>
 
@@ -592,8 +697,11 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-slate-400 font-mono uppercase tracking-wider text-[10px] border-b border-slate-200">
                       <tr>
+                        <th className="py-3 px-3 text-center">Orden</th>
                         <th className="py-3 px-4">Cuestionario</th>
+                        <th className="py-3 px-3 text-center">Modalidad</th>
                         <th className="py-3 px-4">Colección Firestore</th>
+                        <th className="py-3 px-4 text-center">Estado</th>
                         <th className="py-3 px-4 text-center">Total Envíos</th>
                         <th className="py-3 px-4 text-center">Completados</th>
                         <th className="py-3 px-4 text-center">Colaboradores</th>
@@ -604,9 +712,38 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
                       {filteredQuestionnaires.map((q) => {
                         const stats = formStats[q.id] || { total: 0, completed: 0, inProgress: 0, uniqueUsers: 0 };
                         const isPerfil = q.id === 'perfil_profesional';
+                        const completionPct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+                        const posIndex = sortedQuestionnaires.findIndex(item => item.id === q.id);
 
                         return (
                           <tr key={q.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-4 px-3 text-center">
+                              <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                                <span className="text-[10px] font-mono font-bold px-1.5 text-slate-700">
+                                  #{q.order ?? (posIndex + 1)}
+                                </span>
+                                <div className="flex flex-col border-l border-slate-200">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleMoveOrder(q.id, 'up', e)}
+                                    disabled={posIndex === 0}
+                                    className="p-0.5 hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-20 rounded cursor-pointer"
+                                    title="Subir orden"
+                                  >
+                                    <ChevronUp size={10} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleMoveOrder(q.id, 'down', e)}
+                                    disabled={posIndex === sortedQuestionnaires.length - 1}
+                                    className="p-0.5 hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-20 rounded cursor-pointer"
+                                    title="Bajar orden"
+                                  >
+                                    <ChevronDown size={10} />
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
                             <td className="py-4 px-4">
                               <div className="flex items-center gap-3">
                                 <div className={`p-2 rounded-xl shrink-0 ${isPerfil ? 'bg-emerald-50 text-emerald-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -618,8 +755,38 @@ export default function AdminDashboard({ onBack }: AdminDashboardProps) {
                                 </div>
                               </div>
                             </td>
+                            <td className="py-4 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleOptional(q, e)}
+                                className={`px-2 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition inline-flex items-center gap-1 cursor-pointer border ${
+                                  q.isOptional
+                                    ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                                }`}
+                                title="Clic para alternar entre obligatorio y opcional"
+                              >
+                                {q.isOptional ? <Tag size={9} /> : <Shield size={9} />}
+                                <span>{q.isOptional ? 'Opcional' : 'Obligatorio'}</span>
+                              </button>
+                            </td>
                             <td className="py-4 px-4 font-mono text-[11px] text-slate-500">
                               {q.collectionPath}
+                            </td>
+                            <td className="py-4 px-4 text-center">
+                              {stats.completed > 0 && stats.inProgress === 0 && stats.total === stats.completed ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 font-mono">
+                                  <CheckCircle2 size={10} className="text-emerald-600" /> 100% Completado ({stats.completed})
+                                </span>
+                              ) : stats.completed > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-mono">
+                                  <Clock size={10} className="text-blue-600" /> {stats.completed} Completados ({completionPct}%)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 font-mono">
+                                  <Layers size={10} className="text-slate-500" /> Activo
+                                </span>
+                              )}
                             </td>
                             <td className="py-4 px-4 text-center font-bold text-slate-800">
                               {stats.total}

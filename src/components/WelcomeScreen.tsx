@@ -128,6 +128,35 @@ export default function WelcomeScreen({
 
   // Inline editing of name in Hub header
   const [isEditingName, setIsEditingName] = useState(false);
+  const [userCustomEditedName, setUserCustomEditedName] = useState<string | null>(null);
+
+  // Derived official assigned agent name from Firestore assignments or evaluations
+  const assignedAgentName = useMemo(() => {
+    return assignedItems.find(i => i.assignment?.agentName && i.assignment.agentName.trim() && !i.assignment.agentName.includes('@'))?.assignment?.agentName?.trim() ||
+           detectedEvaluations.find(e => e.profile?.name && e.profile.name.trim() && !e.profile.name.includes('@'))?.profile?.name?.trim() ||
+           '';
+  }, [assignedItems, detectedEvaluations]);
+
+  // Priority: User custom edit > Official assigned agent name > profile.name (ignoring stale RP) > email prefix
+  const displayedName = useMemo(() => {
+    if (userCustomEditedName) return userCustomEditedName;
+    if (assignedAgentName) return assignedAgentName;
+    if (profile.name.trim() && profile.name.trim() !== 'RP') return profile.name.trim();
+    if (profile.email.trim()) return profile.email.split('@')[0];
+    return 'Colaborador FHONS';
+  }, [userCustomEditedName, assignedAgentName, profile.name, profile.email]);
+
+  const getInitials = (nameStr: string, emailStr: string) => {
+    const clean = (nameStr || '').trim();
+    if (clean && !clean.includes('@') && clean !== 'Colaborador FHONS') {
+      const parts = clean.split(/\s+/).filter(Boolean);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return (emailStr.charAt(0) || 'A').toUpperCase();
+  };
 
   // Free/Open selection fallback toggle (for demos or if admin enabled all forms)
   const [showAllFormsMode, setShowAllFormsMode] = useState<boolean>(false);
@@ -197,16 +226,38 @@ export default function WelcomeScreen({
 
           setDetectedEvaluations(evals);
 
-          // Auto-prefill name if found in existing evaluations or assignments
-          if (!profile.name.trim()) {
-            const foundName = evals[0]?.profile?.name || assignments[0]?.agentName;
-            if (foundName) {
-              setProfile(prev => ({ ...prev, name: foundName }));
+          // Automatically take the assigned agent's official name from assignments or previous evaluations
+          const assignedName = assignments.find(a => a.agentName && a.agentName.trim() && !a.agentName.includes('@'))?.agentName?.trim();
+          const evalName = evals.find(e => e.profile?.name && e.profile.name.trim() && !e.profile.name.includes('@'))?.profile?.name?.trim();
+          const officialName = assignedName || evalName;
+
+          if (officialName) {
+            // Apply official assigned name unless user explicitly saved a custom edit for this email
+            if (!userCustomEditedName || profile.name.trim() === 'RP') {
+              setProfile(prev => ({ ...prev, name: officialName }));
+              try {
+                localStorage.setItem('fhons_profile', JSON.stringify({ ...profile, email: cleanEmail, name: officialName }));
+              } catch (e) {
+                // ignore
+              }
             }
+          } else if (!profile.name.trim() || profile.name.trim() === 'RP') {
+            const fallbackName = cleanEmail.split('@')[0];
+            setProfile(prev => ({ ...prev, name: fallbackName }));
           }
 
           // Build assigned questionnaire items list
           const itemsMap = new Map<string, AssignedQuestionnaireItem>();
+
+          // Priority scoring: completed (4) > abierto_pendiente (3) > in_progress (2) > pending (1)
+          const statusScore = (st?: string) => {
+            switch (st) {
+              case 'completed': return 4;
+              case 'abierto_pendiente': return 3;
+              case 'in_progress': return 2;
+              default: return 1;
+            }
+          };
 
           // 1. Process explicit assignments
           assignments.forEach(a => {
@@ -219,8 +270,14 @@ export default function WelcomeScreen({
             };
 
             const existingEval = evals.find(e => e.questionnaireId === a.questionnaireId);
+            
+            // Never downgrade a completed assignment or evaluation! Pick the highest status.
+            const aScore = statusScore(a.status);
+            const eScore = statusScore(existingEval?.status);
             const status: 'pending' | 'in_progress' | 'abierto_pendiente' | 'completed' = 
-              existingEval ? existingEval.status : a.status || 'pending';
+              aScore >= eScore
+                ? (a.status || existingEval?.status || 'pending')
+                : (existingEval?.status || a.status || 'pending');
 
             itemsMap.set(a.questionnaireId, {
               questionnaire: matchedQ,
@@ -230,10 +287,19 @@ export default function WelcomeScreen({
             });
           });
 
-          // 2. Also include any questionnaires where user already has evaluations in Firestore
+          // 2. Also include or upgrade any questionnaires where user already has evaluations in Firestore
           evals.forEach(e => {
             const qId = e.questionnaireId || (e.answers?.cargo !== undefined ? 'perfil_profesional' : 'servicio_al_cliente');
-            if (!itemsMap.has(qId)) {
+            const existingItem = itemsMap.get(qId);
+            if (existingItem) {
+              // If the evaluation has higher status (e.g. completed), upgrade the item's status and evaluation
+              if (statusScore(e.status) > statusScore(existingItem.status)) {
+                existingItem.status = e.status;
+                existingItem.existingEvaluation = e;
+              } else if (!existingItem.existingEvaluation) {
+                existingItem.existingEvaluation = e;
+              }
+            } else {
               const matchedQ = allQuestionnaires.find(q => q.id === qId) || {
                 id: qId,
                 title: qId === 'perfil_profesional' ? 'Perfil Profesional FHONS (Web Oficial)' : 'Soporte TI de Excelencia',
@@ -357,17 +423,18 @@ export default function WelcomeScreen({
   };
 
   const handleStartQuestionnaire = (targetQId: string, existingEval?: EvaluationDocument) => {
-    let currentName = profile.name.trim();
-    if (!currentName) {
-      const fallbackName = existingEval?.profile?.name || assignedItems[0]?.assignment?.agentName;
-      if (fallbackName) {
-        currentName = fallbackName;
-        setProfile(prev => ({ ...prev, name: fallbackName }));
-      } else {
-        setErrors({ name: 'Por favor confirma tu nombre completo antes de iniciar.' });
-        return;
-      }
+    const matchedItem = assignedItems.find(i => i.questionnaire.id === targetQId);
+    const assignedName = matchedItem?.assignment?.agentName || 
+                         assignedAgentName || 
+                         existingEval?.profile?.name;
+
+    // Prioritize official assigned name, unless user explicitly customized it
+    let currentName = userCustomEditedName || (profile.name.trim() !== 'RP' && profile.name.trim()) || assignedName?.trim();
+    if (!currentName || currentName.includes('@')) {
+      currentName = assignedName?.trim() || profile.email.split('@')[0];
     }
+
+    setProfile(prev => ({ ...prev, name: currentName }));
 
     const currentProfile: UserProfile = {
       ...profile,
@@ -579,7 +646,16 @@ export default function WelcomeScreen({
                   placeholder="ejemplo: tu_correo@fhons.com.do"
                   value={profile.email}
                   onChange={(e) => {
-                    setProfile({ ...profile, email: e.target.value });
+                    const newEmail = e.target.value;
+                    const isSame = profile.email.trim().toLowerCase() === newEmail.trim().toLowerCase();
+                    setProfile(prev => ({
+                      ...prev,
+                      email: newEmail,
+                      name: isSame ? prev.name : ''
+                    }));
+                    if (!isSame) {
+                      setUserCustomEditedName(null);
+                    }
                     setTokenError(null);
                   }}
                   className={`w-full px-4 py-3 bg-white border ${
@@ -599,8 +675,8 @@ export default function WelcomeScreen({
                     {/* Agent Identity & Verified Email Banner */}
                     <div className="p-3.5 bg-gradient-to-r from-blue-50/80 to-indigo-50/50 rounded-2xl border border-blue-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
-                          {(profile.name || profile.email).charAt(0).toUpperCase()}
+                        <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs tracking-wider">
+                          {getInitials(displayedName, profile.email)}
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
@@ -608,7 +684,7 @@ export default function WelcomeScreen({
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="text"
-                                  value={profile.name}
+                                  value={profile.name || displayedName}
                                   placeholder="Escribe tu nombre completo..."
                                   onChange={(e) => setProfile({ ...profile, name: e.target.value })}
                                   className="px-2.5 py-1 text-xs font-bold text-slate-800 bg-white border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
@@ -616,7 +692,10 @@ export default function WelcomeScreen({
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => setIsEditingName(false)}
+                                  onClick={() => {
+                                    setIsEditingName(false);
+                                    setUserCustomEditedName(profile.name.trim());
+                                  }}
                                   className="px-2 py-1 bg-blue-600 text-white text-[10px] font-bold rounded-lg cursor-pointer"
                                 >
                                   Guardar
@@ -625,7 +704,7 @@ export default function WelcomeScreen({
                             ) : (
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-bold text-slate-900 truncate">
-                                  {profile.name.trim() || 'Colaborador FHONS'}
+                                  {displayedName}
                                 </span>
                                 <button
                                   type="button"
@@ -649,6 +728,7 @@ export default function WelcomeScreen({
                         type="button"
                         onClick={() => {
                           setProfile(prev => ({ ...prev, email: '', name: '' }));
+                          setUserCustomEditedName(null);
                           setAssignedItems([]);
                         }}
                         className="text-[11px] text-slate-500 hover:text-rose-600 font-mono transition flex items-center gap-1 self-end sm:self-center cursor-pointer shrink-0 px-2 py-1 hover:bg-white/80 rounded-lg"
@@ -997,7 +1077,9 @@ export default function WelcomeScreen({
                                 <div className="text-[10px] text-slate-400 font-mono">
                                   {hasExistingDoc
                                     ? `Último registro: ${new Date(item.existingEvaluation!.updatedAt || item.existingEvaluation!.createdAt || Date.now()).toLocaleDateString('es-DO', { day: '2-digit', month: 'short' })}`
-                                    : 'Asignado a tu usuario • Listo para comenzar'}
+                                    : (item.assignment?.agentName && !item.assignment.agentName.includes('@')
+                                        ? `Asignado a ${item.assignment.agentName} • Listo para comenzar`
+                                        : 'Asignado a tu usuario • Listo para comenzar')}
                                 </div>
 
                                 <div className="flex items-center gap-2 self-end sm:self-center">

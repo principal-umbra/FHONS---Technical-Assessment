@@ -59,7 +59,9 @@ export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
     status: 'active',
     estimatedMinutes: 20,
     icon: 'Headphones',
-    tags: ['Soporte TI', 'Pilares', 'Atención']
+    tags: ['Soporte TI', 'Pilares', 'Atención'],
+    order: 1,
+    isOptional: false
   },
   {
     id: 'perfil_profesional',
@@ -71,19 +73,23 @@ export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
     status: 'active',
     estimatedMinutes: 15,
     icon: 'Globe',
-    tags: ['Web Oficial', 'Biografía', 'Habilidades']
+    tags: ['Web Oficial', 'Biografía', 'Habilidades'],
+    order: 2,
+    isOptional: false
   },
   {
     id: 'proceso_retroalimentacion',
     title: 'Proceso de Retroalimentación y Seguimiento de Incumplimientos',
-    description: 'Material oficial y cuestionario sobre las 4 etapas disciplinarias, reglas de no reincidencia y marco legal (Ley 16-92).',
+    description: 'Material oficial y cuestionario sobre las 4 etapas disciplinarias, reglas de no reincidencia y marco formativo.',
     collectionPath: 'evaluations_proceso_retroalimentacion',
     uiPath: 'proceso_retroalimentacion',
     category: 'Procesos Laborales & Talento',
     status: 'active',
     estimatedMinutes: 20,
     icon: 'ShieldAlert',
-    tags: ['Procesos', 'Retroalimentación', 'Ley 16-92', 'Faltas']
+    tags: ['Procesos', 'Retroalimentación', 'Formativo', 'Faltas'],
+    order: 3,
+    isOptional: false
   },
   {
     id: 'proceso_guardia',
@@ -95,7 +101,9 @@ export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
     status: 'active',
     estimatedMinutes: 15,
     icon: 'Moon',
-    tags: ['Procesos', 'Guardia', 'Disponibilidad', 'CRM']
+    tags: ['Procesos', 'Guardia', 'Disponibilidad', 'CRM'],
+    order: 4,
+    isOptional: false
   },
   {
     id: 'protocolo_tickets',
@@ -107,7 +115,9 @@ export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
     status: 'active',
     estimatedMinutes: 15,
     icon: 'Inbox',
-    tags: ['Protocolos', 'Tickets', 'Ownership', 'Seguimiento']
+    tags: ['Protocolos', 'Tickets', 'Ownership', 'Seguimiento'],
+    order: 5,
+    isOptional: false
   },
   {
     id: 'protocolo_migraciones',
@@ -119,7 +129,9 @@ export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
     status: 'active',
     estimatedMinutes: 20,
     icon: 'Server',
-    tags: ['Protocolos', 'Migraciones', 'Operaciones', 'Jornada']
+    tags: ['Protocolos', 'Migraciones', 'Operaciones', 'Jornada'],
+    order: 6,
+    isOptional: false
   },
   {
     id: 'protocolo_visitas',
@@ -131,7 +143,9 @@ export const DEFAULT_QUESTIONNAIRES: Questionnaire[] = [
     status: 'active',
     estimatedMinutes: 20,
     icon: 'Briefcase',
-    tags: ['Protocolos', 'Visitas Técnicas', 'Terreno', 'Seguridad']
+    tags: ['Protocolos', 'Visitas Técnicas', 'Terreno', 'Seguridad'],
+    order: 7,
+    isOptional: false
   }
 ];
 
@@ -157,6 +171,7 @@ export async function seedQuestionnairesIfMissing(): Promise<void> {
 
 /**
  * Fetches all available questionnaires from the 'questionnaires' collection or fallback defaults.
+ * Sorted strictly by defined order (ascending), then by title.
  */
 export async function getQuestionnaires(): Promise<Questionnaire[]> {
   try {
@@ -168,7 +183,12 @@ export async function getQuestionnaires(): Promise<Questionnaire[]> {
     DEFAULT_QUESTIONNAIRES.forEach(q => questionnairesMap.set(q.id, q));
 
     snapshot.forEach(d => {
-      questionnairesMap.set(d.id, { id: d.id, ...d.data() } as Questionnaire);
+      const existingDefault = questionnairesMap.get(d.id);
+      questionnairesMap.set(d.id, { 
+        ...existingDefault,
+        ...d.data(),
+        id: d.id 
+      } as Questionnaire);
     });
 
     // If Firestore collection was empty, seed asynchronously
@@ -176,10 +196,18 @@ export async function getQuestionnaires(): Promise<Questionnaire[]> {
       seedQuestionnairesIfMissing().catch(console.error);
     }
 
-    return Array.from(questionnairesMap.values());
+    const list = Array.from(questionnairesMap.values());
+    list.sort((a, b) => {
+      const orderA = a.order ?? 999;
+      const orderB = b.order ?? 999;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.title.localeCompare(b.title);
+    });
+
+    return list;
   } catch (err) {
-    console.error('Error fetching questionnaires from firestore, using defaults:', err);
-    return DEFAULT_QUESTIONNAIRES;
+    console.error("Error fetching questionnaires:", err);
+    return [...DEFAULT_QUESTIONNAIRES].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
   }
 }
 
@@ -449,22 +477,37 @@ export async function listEvaluations(email?: string, collectionPath: string = '
   const collRef = collection(db, targetCollection);
   
   try {
-    let querySnapshot;
-    if (email && email.trim()) {
-      // Do NOT combine where and orderBy across different fields to avoid composite index requirements!
-      const q = query(collRef, where('profile.email', '==', email.trim().toLowerCase()));
-      querySnapshot = await getDocs(q);
-    } else {
-      const q = query(collRef, orderBy('updatedAt', 'desc'));
-      querySnapshot = await getDocs(q);
-    }
-
-    const records: EvaluationDocument[] = [];
+    const querySnapshot = await getDocs(collRef);
+    let records: EvaluationDocument[] = [];
     querySnapshot.forEach((docSnap) => {
       records.push(docSnap.data() as EvaluationDocument);
     });
-    // In-memory sort ensures perfect ordering without requiring Firestore composite indexes
-    records.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+
+    if (email && email.trim()) {
+      const cleanTarget = normalizeEmail(email);
+      const associated = getAllAssociatedEmails(cleanTarget);
+      records = records.filter(doc => {
+        const docEmail = normalizeEmail(doc.profile?.email || (doc as any).agentEmail || (doc as any).email || '');
+        return associated.includes(docEmail);
+      });
+    }
+
+    // In-memory sort: prioritize 'completed' status, then newest updatedAt
+    const statusScore = (s?: string) => {
+      switch (s) {
+        case 'completed': return 4;
+        case 'abierto_pendiente': return 3;
+        case 'in_progress': return 2;
+        default: return 1;
+      }
+    };
+
+    records.sort((a, b) => {
+      const diffScore = statusScore(b.status) - statusScore(a.status);
+      if (diffScore !== 0) return diffScore;
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    });
+
     return records;
   } catch (err) {
     console.error(`Error listing evaluations in ${targetCollection}:`, err);
@@ -478,30 +521,46 @@ export async function listEvaluations(email?: string, collectionPath: string = '
 export async function listAllUserEvaluations(email: string): Promise<EvaluationDocument[]> {
   if (!email || !email.trim()) return [];
   const cleanEmail = normalizeEmail(email);
-  const associated = getAllAssociatedEmails(cleanEmail);
   const allQ = await getQuestionnaires();
   
   const results = await Promise.all(
-    associated.flatMap(em =>
-      allQ.map(q => 
-        listEvaluations(em, q.collectionPath)
-          .then(docs => docs.map(d => ({ ...d, questionnaireId: q.id })))
-          .catch(() => [] as EvaluationDocument[])
-      )
-    )
+    allQ.map(async q => {
+      const docs = await listEvaluations(cleanEmail, q.collectionPath);
+      return docs.map(d => ({ ...d, questionnaireId: q.id }));
+    })
   );
 
   const combined = results.flat();
-  const map = new Map<string, EvaluationDocument>();
+  // Map by questionnaireId, strictly preserving the highest status (completed > abierto_pendiente > in_progress > pending)
+  const statusScore = (s?: string) => {
+    switch (s) {
+      case 'completed': return 4;
+      case 'abierto_pendiente': return 3;
+      case 'in_progress': return 2;
+      default: return 1;
+    }
+  };
+
+  const bestByQ = new Map<string, EvaluationDocument>();
   combined.forEach(docItem => {
-    if (!map.has(docItem.id)) {
-      map.set(docItem.id, docItem);
+    const qId = docItem.questionnaireId || 'servicio_al_cliente';
+    const existing = bestByQ.get(qId);
+    if (!existing) {
+      bestByQ.set(qId, docItem);
+    } else {
+      const existingScore = statusScore(existing.status);
+      const newScore = statusScore(docItem.status);
+      if (newScore > existingScore) {
+        bestByQ.set(qId, docItem);
+      } else if (newScore === existingScore) {
+        if (new Date(docItem.updatedAt || 0).getTime() > new Date(existing.updatedAt || 0).getTime()) {
+          bestByQ.set(qId, docItem);
+        }
+      }
     }
   });
 
-  const uniqueList = Array.from(map.values());
-  uniqueList.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  return uniqueList;
+  return Array.from(bestByQ.values());
 }
 
 /**
@@ -592,7 +651,9 @@ export async function bulkAssignQuestionnaire(
   questionnaireTitle?: string,
   notes?: string,
   assignedBy?: string,
-  agentName?: string
+  agentName?: string,
+  isOptional?: boolean,
+  order?: number
 ): Promise<{ created: number; updated: number }> {
   let created = 0;
   let updated = 0;
@@ -614,7 +675,9 @@ export async function bulkAssignQuestionnaire(
           questionnaireTitle: questionnaireTitle || existingSnap.data()?.questionnaireTitle,
           notes: notes !== undefined ? notes : existingSnap.data()?.notes,
           assignedBy: assignedBy || existingSnap.data()?.assignedBy,
-          ...(agentName ? { agentName } : {})
+          ...(agentName ? { agentName } : {}),
+          ...(isOptional !== undefined ? { isOptional } : {}),
+          ...(order !== undefined ? { order } : {})
         }), { merge: true });
         updated++;
       } else {
@@ -627,7 +690,9 @@ export async function bulkAssignQuestionnaire(
           assignedAt: new Date().toISOString(),
           assignedBy: assignedBy || 'Administrador',
           status: 'pending',
-          notes: notes || ''
+          notes: notes || '',
+          ...(isOptional !== undefined ? { isOptional } : {}),
+          ...(order !== undefined ? { order } : {})
         };
         await setDoc(docRef, sanitizeForFirestore(payload));
         created++;
@@ -667,7 +732,15 @@ export async function getAssignmentsByEmail(email: string): Promise<Questionnair
       const currentScore = statusPriority[existing.status] || 0;
       const newScore = statusPriority[a.status] || 0;
       if (newScore > currentScore) {
-        assignmentsMap.set(a.questionnaireId, a);
+        assignmentsMap.set(a.questionnaireId, {
+          ...existing,
+          ...a,
+          order: a.order !== undefined ? a.order : existing.order,
+          isOptional: a.isOptional !== undefined ? a.isOptional : existing.isOptional
+        });
+      } else {
+        if (a.order !== undefined) existing.order = a.order;
+        if (a.isOptional !== undefined) existing.isOptional = a.isOptional;
       }
     }
   };
@@ -807,6 +880,7 @@ export async function syncAssignmentProgress(
     const cleanEmail = normalizeEmail(email);
     const associated = getAllAssociatedEmails(cleanEmail);
 
+    let updatedAny = false;
     for (const em of associated) {
       const id = `${em.replace(/[^a-zA-Z0-9]/g, '_')}_${questionnaireId}`;
       const docRef = doc(db, 'questionnaire_assignments', id);
@@ -817,7 +891,28 @@ export async function syncAssignmentProgress(
           updatedAt: new Date().toISOString(),
           ...(extraData ? extraData : {})
         }, { merge: true });
+        updatedAny = true;
       }
+    }
+
+    // If no assignment record existed yet, create one so Admin Assignments sees it
+    if (!updatedAny) {
+      const allQ = await getQuestionnaires();
+      const matchedQ = allQ.find(q => q.id === questionnaireId);
+      const id = `${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}_${questionnaireId}`;
+      const docRef = doc(db, 'questionnaire_assignments', id);
+      await setDoc(docRef, sanitizeForFirestore({
+        id,
+        agentEmail: cleanEmail,
+        agentName: cleanEmail.split('@')[0],
+        questionnaireId,
+        questionnaireTitle: matchedQ?.title || questionnaireId,
+        assignedAt: new Date().toISOString(),
+        assignedBy: 'Sistema FHONS',
+        status,
+        updatedAt: new Date().toISOString(),
+        ...(extraData ? extraData : {})
+      }), { merge: true });
     }
   } catch (err) {
     console.error('Error syncing assignment progress:', err);

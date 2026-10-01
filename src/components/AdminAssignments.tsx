@@ -28,7 +28,8 @@ import {
   Moon,
   Inbox,
   Server,
-  Briefcase
+  Briefcase,
+  Tag
 } from 'lucide-react';
 import { 
   QuestionnaireAssignment, 

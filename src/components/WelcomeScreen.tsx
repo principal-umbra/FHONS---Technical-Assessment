@@ -38,7 +38,9 @@ import {
   Award,
   AlertTriangle,
   Search,
-  ChevronDown
+  ChevronDown,
+  ChevronUp,
+  Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -88,7 +90,7 @@ export default function WelcomeScreen({
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
 
   // Filter tab for the Agent Hub: default 'todo' (shows pending, in_progress, and abierto_pendiente)
-  const [filterTab, setFilterTab] = useState<'todo' | 'abierto_pendiente' | 'pending' | 'in_progress' | 'completed' | 'all'>('todo');
+  const [filterTab, setFilterTab] = useState<'todo' | 'abierto_pendiente' | 'pending' | 'in_progress' | 'completed' | 'all' | 'opcional' | 'obligatorio'>('todo');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const pendingCount = useMemo(() => assignedItems.filter(i => i.status === 'pending').length, [assignedItems]);
@@ -97,8 +99,24 @@ export default function WelcomeScreen({
   const completedCount = useMemo(() => assignedItems.filter(i => i.status === 'completed').length, [assignedItems]);
   const toDoCount = useMemo(() => pendingCount + abiertoCount + inProgressCount, [pendingCount, abiertoCount, inProgressCount]);
 
+  const optionalCount = useMemo(() => {
+    return assignedItems.filter(i => {
+      return i.assignment?.isOptional !== undefined 
+        ? i.assignment.isOptional 
+        : (i.questionnaire.isOptional ?? false);
+    }).length;
+  }, [assignedItems]);
+
+  const mandatoryCount = useMemo(() => {
+    return assignedItems.length - optionalCount;
+  }, [assignedItems, optionalCount]);
+
   const filteredItems = useMemo(() => {
-    return assignedItems.filter(item => {
+    const list = assignedItems.filter(item => {
+      const isItemOpt = item.assignment?.isOptional !== undefined 
+        ? item.assignment.isOptional 
+        : (item.questionnaire.isOptional ?? false);
+
       // Status Tab filter
       if (filterTab === 'todo') {
         const isToDo = item.status === 'pending' || item.status === 'abierto_pendiente' || item.status === 'in_progress';
@@ -111,6 +129,10 @@ export default function WelcomeScreen({
         if (item.status !== 'in_progress') return false;
       } else if (filterTab === 'completed') {
         if (item.status !== 'completed') return false;
+      } else if (filterTab === 'opcional') {
+        if (!isItemOpt) return false;
+      } else if (filterTab === 'obligatorio') {
+        if (isItemOpt) return false;
       }
 
       // Search Query filter
@@ -124,6 +146,15 @@ export default function WelcomeScreen({
 
       return true;
     });
+
+    list.sort((itemA, itemB) => {
+      const ordA = itemA.assignment?.order ?? itemA.questionnaire.order ?? 999;
+      const ordB = itemB.assignment?.order ?? itemB.questionnaire.order ?? 999;
+      if (ordA !== ordB) return ordA - ordB;
+      return (itemA.questionnaire.title || '').localeCompare(itemB.questionnaire.title || '');
+    });
+
+    return list;
   }, [assignedItems, filterTab, searchQuery]);
 
   // Inline editing of name in Hub header
@@ -261,12 +292,20 @@ export default function WelcomeScreen({
 
           // 1. Process explicit assignments
           assignments.forEach(a => {
-            const matchedQ = allQuestionnaires.find(q => q.id === a.questionnaireId) || {
+            const baseQ = allQuestionnaires.find(q => q.id === a.questionnaireId) || {
               id: a.questionnaireId,
               title: a.questionnaireTitle || a.questionnaireId,
               description: 'Cuestionario asignado por la administración.',
               collectionPath: `evaluations_${a.questionnaireId}`,
-              uiPath: a.questionnaireId
+              uiPath: a.questionnaireId,
+              isOptional: false,
+              order: 999
+            };
+
+            const matchedQ: Questionnaire = {
+              ...baseQ,
+              isOptional: a.isOptional !== undefined ? a.isOptional : (baseQ.isOptional ?? false),
+              order: a.order !== undefined ? a.order : (baseQ.order ?? 999)
             };
 
             const existingEval = evals.find(e => e.questionnaireId === a.questionnaireId);
@@ -305,7 +344,9 @@ export default function WelcomeScreen({
                 title: qId === 'perfil_profesional' ? 'Perfil Profesional FHONS (Web Oficial)' : 'Soporte TI de Excelencia',
                 description: 'Cuestionario con registros previos en base de datos.',
                 collectionPath: `evaluations_${qId}`,
-                uiPath: qId
+                uiPath: qId,
+                isOptional: false,
+                order: 999
               };
 
               itemsMap.set(qId, {
@@ -317,6 +358,12 @@ export default function WelcomeScreen({
           });
 
           const consolidated = Array.from(itemsMap.values());
+          consolidated.sort((itemA, itemB) => {
+            const ordA = itemA.assignment?.order ?? itemA.questionnaire.order ?? 999;
+            const ordB = itemB.assignment?.order ?? itemB.questionnaire.order ?? 999;
+            if (ordA !== ordB) return ordA - ordB;
+            return (itemA.questionnaire.title || '').localeCompare(itemB.questionnaire.title || '');
+          });
           setAssignedItems(consolidated);
 
           // If the currently selected questionnaire is in the assigned list, keep it;
@@ -577,11 +624,17 @@ export default function WelcomeScreen({
                   />
                 </div>
                 <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                  <span>{toDoCount} por hacer</span>
+                  <span>{toDoCount} por hacer ({mandatoryCount} obligatorios)</span>
                   <span className={abiertoCount > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
                     {abiertoCount > 0 ? `${abiertoCount} abiertos pendientes` : 'Al día'}
                   </span>
                 </div>
+                {optionalCount > 0 && (
+                  <div className="text-[9px] text-amber-300 font-mono flex items-center gap-1 pt-1 border-t border-blue-900/60">
+                    <Tag size={10} className="text-amber-400 shrink-0" />
+                    <span>Incluye {optionalCount} cuestionario{optionalCount > 1 ? 's' : ''} opcional{optionalCount > 1 ? 'es' : ''}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -905,6 +958,21 @@ export default function WelcomeScreen({
                           >
                             <span>Todos ({assignedItems.length})</span>
                           </button>
+
+                          {optionalCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setFilterTab('opcional')}
+                              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                                filterTab === 'opcional'
+                                  ? 'bg-amber-600 text-white'
+                                  : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-300'
+                              }`}
+                            >
+                              <Tag size={12} className={filterTab === 'opcional' ? 'text-white' : 'text-amber-700'} />
+                              <span>Opcionales ({optionalCount})</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* Search Input */}
@@ -944,7 +1012,9 @@ export default function WelcomeScreen({
                             ? '¡Excelente! No tienes cuestionarios pendientes ni abiertos por hacer en este momento.'
                             : filterTab === 'abierto_pendiente'
                               ? 'No tienes cuestionarios con calificación menor al 95% pendientes de reintentar.'
-                              : 'No se encontraron resultados para la vista seleccionada.'}
+                              : filterTab === 'opcional'
+                                ? 'No tienes cuestionarios marcados como opcionales en esta consulta.'
+                                : 'No se encontraron resultados para la vista seleccionada.'}
                         </p>
                         <button
                           type="button"
@@ -959,7 +1029,7 @@ export default function WelcomeScreen({
                       </div>
                     ) : (
                       <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
-                        {filteredItems.map((item) => {
+                        {filteredItems.map((item, index) => {
                           const q = item.questionnaire;
                           const isSelected = selectedQuestionnaireId === q.id;
                           const isCompleted = item.status === 'completed';
@@ -967,6 +1037,10 @@ export default function WelcomeScreen({
                           const isInProgress = item.status === 'in_progress';
                           const hasExistingDoc = !!item.existingEvaluation;
                           const score = (item.existingEvaluation as any)?.scorePercentage ?? (item.existingEvaluation?.answers as any)?.scorePercentage ?? item.assignment?.scorePercentage;
+                          const isOptional = item.assignment?.isOptional !== undefined 
+                            ? item.assignment.isOptional 
+                            : (q.isOptional ?? false);
+                          const displayOrder = item.assignment?.order ?? q.order ?? (index + 1);
 
                           return (
                             <div
@@ -977,7 +1051,9 @@ export default function WelcomeScreen({
                                   ? 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-300/40 hover:border-amber-400'
                                   : isSelected
                                     ? 'border-blue-600 bg-blue-50/20 shadow-xs'
-                                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                                    : isOptional
+                                      ? 'border-amber-200/80 hover:border-amber-300 bg-white'
+                                      : 'border-slate-200 hover:border-slate-300 bg-white'
                               }`}
                             >
                               {/* Top Banner / Status Highlight */}
@@ -995,6 +1071,29 @@ export default function WelcomeScreen({
                                     {getQuestionnaireIcon(q.id)}
                                   </div>
                                   <div>
+                                    {/* Order, Category & Optional / Mandatory Tags */}
+                                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                                      <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200" title={`Orden de visualización: #${displayOrder}`}>
+                                        #{displayOrder}
+                                      </span>
+
+                                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                                        {q.category || 'Evaluación'}
+                                      </span>
+
+                                      {isOptional ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+                                          <Tag size={10} className="text-amber-700" />
+                                          <span>Opcional</span>
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
+                                          <Shield size={10} className="text-slate-500" />
+                                          <span>Obligatorio</span>
+                                        </span>
+                                      )}
+                                    </div>
+
                                     <div className="flex items-center gap-2">
                                       <h4 className="text-xs sm:text-sm font-bold text-slate-900 font-display">
                                         {q.title}
@@ -1074,12 +1173,23 @@ export default function WelcomeScreen({
 
                               {/* Action Footer */}
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 text-[11px]">
-                                <div className="text-[10px] text-slate-400 font-mono">
-                                  {hasExistingDoc
-                                    ? `Último registro: ${new Date(item.existingEvaluation!.updatedAt || item.existingEvaluation!.createdAt || Date.now()).toLocaleDateString('es-DO', { day: '2-digit', month: 'short' })}`
-                                    : (item.assignment?.agentName && !item.assignment.agentName.includes('@')
-                                        ? `Asignado a ${item.assignment.agentName} • Listo para comenzar`
-                                        : 'Asignado a tu usuario • Listo para comenzar')}
+                                <div className="text-[10px] text-slate-400 font-mono flex items-center flex-wrap gap-1">
+                                  {isOptional ? (
+                                    <span className="text-amber-800 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                      Opcional
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600 font-medium bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                      Obligatorio
+                                    </span>
+                                  )}
+                                  <span>
+                                    {hasExistingDoc
+                                      ? `• Último registro: ${new Date(item.existingEvaluation!.updatedAt || item.existingEvaluation!.createdAt || Date.now()).toLocaleDateString('es-DO', { day: '2-digit', month: 'short' })}`
+                                      : (item.assignment?.agentName && !item.assignment.agentName.includes('@')
+                                          ? `• Asignado a ${item.assignment.agentName}`
+                                          : '• Asignado a tu usuario')}
+                                  </span>
                                 </div>
 
                                 <div className="flex items-center gap-2 self-end sm:self-center">
@@ -1180,7 +1290,7 @@ export default function WelcomeScreen({
                   Selección Libre de Cuestionario (Modo Exploración):
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                  {DEFAULT_QUESTIONNAIRES.map((q) => (
+                  {[...DEFAULT_QUESTIONNAIRES].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((q) => (
                     <button
                       key={q.id}
                       type="button"
@@ -1188,14 +1298,25 @@ export default function WelcomeScreen({
                         onSelectQuestionnaire(q.id);
                         handleStartQuestionnaire(q.id);
                       }}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center gap-1.5 text-left cursor-pointer ${
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-between gap-1.5 text-left cursor-pointer ${
                         selectedQuestionnaireId === q.id
                           ? 'bg-white text-slate-900 shadow-xs border border-slate-300'
                           : 'text-slate-600 hover:bg-white/60'
                       }`}
                     >
-                      <Layers size={13} className="text-blue-600 shrink-0" />
-                      <span className="truncate">{q.title}</span>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Layers size={13} className="text-blue-600 shrink-0" />
+                        <span className="truncate">{q.title}</span>
+                      </div>
+                      {q.isOptional ? (
+                        <span className="text-[9px] font-mono font-bold uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                          Opcional
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-mono font-medium uppercase text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                          Obligatorio
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>

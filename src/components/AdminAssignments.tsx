@@ -202,8 +202,15 @@ export default function AdminAssignments({
     const result: AgentGroup[] = [];
     groupMap.forEach((entry) => {
       const consolidatedAssignments = Array.from(entry.qMap.values());
-      // Sort questionnaires: by category or title
-      consolidatedAssignments.sort((q1, q2) => (q1.questionnaireTitle || q1.questionnaireId).localeCompare(q2.questionnaireTitle || q2.questionnaireId));
+      // Sort questionnaires: by assigned order or default questionnaire order, then title
+      consolidatedAssignments.sort((q1, q2) => {
+        const t1 = questionnaires.find(q => q.id === q1.questionnaireId);
+        const t2 = questionnaires.find(q => q.id === q2.questionnaireId);
+        const ord1 = q1.order ?? t1?.order ?? 999;
+        const ord2 = q2.order ?? t2?.order ?? 999;
+        if (ord1 !== ord2) return ord1 - ord2;
+        return (q1.questionnaireTitle || q1.questionnaireId).localeCompare(q2.questionnaireTitle || q2.questionnaireId);
+      });
 
       const completedCount = consolidatedAssignments.filter(a => a.status === 'completed').length;
       const abiertoPendienteCount = consolidatedAssignments.filter(a => a.status === 'abierto_pendiente').length;
@@ -302,6 +309,60 @@ export default function AdminAssignments({
     }
   };
 
+  const handleToggleAgentOptional = async (a: QuestionnaireAssignment, matchedQ?: Questionnaire) => {
+    const currentOptional = a.isOptional !== undefined ? a.isOptional : (matchedQ?.isOptional ?? false);
+    const newOptional = !currentOptional;
+    const canonical = getCanonicalEmail(a.agentEmail);
+
+    setAssignments(prev => prev.map(item => 
+      (item.id === a.id || (getCanonicalEmail(item.agentEmail) === canonical && item.questionnaireId === a.questionnaireId))
+        ? { ...item, isOptional: newOptional }
+        : item
+    ));
+
+    try {
+      await saveAssignment({ ...a, isOptional: newOptional });
+    } catch (err) {
+      console.error('Error toggling optional for assignment:', err);
+      alert('Error al actualizar la modalidad opcional para este agente.');
+    }
+  };
+
+  const handleMoveAgentQuestionnaireOrder = async (agent: AgentGroup, questionnaireId: string, direction: 'up' | 'down') => {
+    const currentList = [...agent.assignments].sort((q1, q2) => {
+      const t1 = questionnaires.find(q => q.id === q1.questionnaireId);
+      const t2 = questionnaires.find(q => q.id === q2.questionnaireId);
+      const ord1 = q1.order ?? t1?.order ?? 999;
+      const ord2 = q2.order ?? t2?.order ?? 999;
+      if (ord1 !== ord2) return ord1 - ord2;
+      return (q1.questionnaireTitle || q1.questionnaireId).localeCompare(q2.questionnaireTitle || q2.questionnaireId);
+    });
+
+    const idx = currentList.findIndex(x => x.questionnaireId === questionnaireId);
+    if (idx === -1) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= currentList.length) return;
+
+    const [moved] = currentList.splice(idx, 1);
+    currentList.splice(targetIdx, 0, moved);
+
+    const updatedAssignments = currentList.map((item, i) => ({
+      ...item,
+      order: i + 1
+    }));
+
+    setAssignments(prev => prev.map(item => {
+      const matched = updatedAssignments.find(u => u.id === item.id || (getCanonicalEmail(u.agentEmail) === agent.canonicalEmail && u.questionnaireId === item.questionnaireId));
+      return matched ? { ...item, order: matched.order } : item;
+    }));
+
+    try {
+      await Promise.all(updatedAssignments.map(u => saveAssignment(u)));
+    } catch (err) {
+      console.error('Error updating agent questionnaire order:', err);
+    }
+  };
+
   const handleDeleteAssignment = async (assignmentId: string, agentEmail: string, questionnaireId: string) => {
     if (!window.confirm(`¿Estás seguro de que deseas revocar esta asignación para ${agentEmail}?`)) {
       return;
@@ -374,7 +435,9 @@ export default function AdminAssignments({
             assignedAt: new Date().toISOString(),
             assignedBy: 'Administrador FHONS',
             status: 'pending',
-            notes: notesInput.trim()
+            notes: notesInput.trim(),
+            isOptional: targetQ?.isOptional ?? false,
+            order: targetQ?.order ?? 999
           });
           totalCreated++;
         }
@@ -427,7 +490,9 @@ export default function AdminAssignments({
           assignedAt: new Date().toISOString(),
           assignedBy: 'Administrador FHONS',
           status: 'pending',
-          notes: quickNotes.trim()
+          notes: quickNotes.trim(),
+          isOptional: targetQ?.isOptional ?? false,
+          order: targetQ?.order ?? 999
         });
       }
       await fetchAssignments();
@@ -648,8 +713,22 @@ export default function AdminAssignments({
                             {getQuestionnaireIcon(q.id)}
                           </div>
                           <div>
-                            <h4 className="text-xs font-bold text-slate-900 line-clamp-1">{q.title}</h4>
-                            <span className="text-[9px] text-slate-400 font-mono uppercase">{q.category || 'General'}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[9px] font-mono font-bold px-1 rounded bg-slate-100 text-slate-700">
+                                #{q.order ?? 999}
+                              </span>
+                              <span className="text-[9px] text-slate-400 font-mono uppercase">{q.category || 'General'}</span>
+                              {q.isOptional ? (
+                                <span className="text-[9px] font-mono font-bold uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  Opcional
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-mono font-medium uppercase text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                  Obligatorio
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="text-xs font-bold text-slate-900 line-clamp-1 mt-0.5">{q.title}</h4>
                           </div>
                         </div>
                         <input
@@ -1105,25 +1184,80 @@ export default function AdminAssignments({
                                     </div>
                                   </div>
 
-                                  {/* Status Select inside Card */}
-                                  <select
-                                    value={a.status}
-                                    onChange={(e) => handleUpdateStatus(a, e.target.value as any)}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider font-mono border cursor-pointer focus:outline-none shrink-0 ${
-                                      isCompleted
-                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                        : isAbierto
-                                          ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                          : isInProgress
-                                            ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                            : 'bg-slate-100 text-slate-700 border-slate-200'
-                                    }`}
-                                  >
-                                    <option value="pending">⏳ Pendiente</option>
-                                    <option value="abierto_pendiente">⚠️ Abierto Pendiente</option>
-                                    <option value="in_progress">⚙️ En Progreso</option>
-                                    <option value="completed">✓ Completado</option>
-                                  </select>
+                                  {/* Controls: Order, Optional Toggle, and Status Select */}
+                                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                                    {/* Order controls for this agent */}
+                                    {(() => {
+                                      const isOptional = a.isOptional !== undefined ? a.isOptional : (matchedQ?.isOptional ?? false);
+                                      const currentOrder = a.order ?? matchedQ?.order ?? (visibleAssignments.findIndex(x => x.id === a.id) + 1);
+                                      const posIndex = visibleAssignments.findIndex(x => x.id === a.id);
+
+                                      return (
+                                        <>
+                                          <div className="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                                            <span className="text-[10px] font-mono font-bold px-1.5 text-slate-700" title="Orden específico para este agente">
+                                              #{currentOrder}
+                                            </span>
+                                            <div className="flex flex-col border-l border-slate-200">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleMoveAgentQuestionnaireOrder(agent, a.questionnaireId, 'up')}
+                                                disabled={posIndex === 0}
+                                                className="p-0.5 hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-20 rounded cursor-pointer transition"
+                                                title="Subir orden para este agente"
+                                              >
+                                                <ChevronUp size={10} />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleMoveAgentQuestionnaireOrder(agent, a.questionnaireId, 'down')}
+                                                disabled={posIndex === visibleAssignments.length - 1}
+                                                className="p-0.5 hover:bg-white text-slate-500 hover:text-slate-900 disabled:opacity-20 rounded cursor-pointer transition"
+                                                title="Bajar orden para este agente"
+                                              >
+                                                <ChevronDown size={10} />
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Optional / Mandatory Toggle */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleAgentOptional(a, matchedQ)}
+                                            className={`px-2 py-1 rounded-lg text-[9px] font-mono font-bold uppercase transition inline-flex items-center gap-1 cursor-pointer border shadow-2xs ${
+                                              isOptional
+                                                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                                                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                                            }`}
+                                            title={isOptional ? "Cuestionario opcional para este agente. Clic para hacerlo obligatorio." : "Cuestionario obligatorio. Clic para hacerlo opcional para este agente."}
+                                          >
+                                            {isOptional ? <Tag size={9} className="text-amber-700" /> : <Shield size={9} className="text-slate-500" />}
+                                            <span>{isOptional ? 'Opcional' : 'Obligatorio'}</span>
+                                          </button>
+                                        </>
+                                      );
+                                    })()}
+
+                                    {/* Status Select inside Card */}
+                                    <select
+                                      value={a.status}
+                                      onChange={(e) => handleUpdateStatus(a, e.target.value as any)}
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider font-mono border cursor-pointer focus:outline-none shrink-0 ${
+                                        isCompleted
+                                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                          : isAbierto
+                                            ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                            : isInProgress
+                                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                              : 'bg-slate-100 text-slate-700 border-slate-200'
+                                      }`}
+                                    >
+                                      <option value="pending">⏳ Pendiente</option>
+                                      <option value="abierto_pendiente">⚠️ Abierto Pendiente</option>
+                                      <option value="in_progress">⚙️ En Progreso</option>
+                                      <option value="completed">✓ Completado</option>
+                                    </select>
+                                  </div>
                                 </div>
 
                                 {/* Information & Notes */}
@@ -1253,8 +1387,22 @@ export default function AdminAssignments({
                         <div className="flex items-center gap-2.5">
                           {getQuestionnaireIcon(q.id)}
                           <div>
-                            <span className="text-xs font-bold text-slate-900 block">{q.title}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">{q.category || 'General'}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[9px] font-mono font-bold px-1 rounded bg-slate-100 text-slate-700">
+                                #{q.order ?? 999}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">{q.category || 'General'}</span>
+                              {q.isOptional ? (
+                                <span className="text-[9px] font-mono font-bold uppercase text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  Opcional
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-mono font-medium uppercase text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                  Obligatorio
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold text-slate-900 block mt-0.5">{q.title}</span>
                           </div>
                         </div>
 

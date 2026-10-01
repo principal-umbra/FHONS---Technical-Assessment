@@ -819,7 +819,9 @@ export async function getAssignmentsByEmail(email: string): Promise<Questionnair
           assignedAt: new Date().toISOString(),
           assignedBy: 'Administrador FHONS',
           status: 'pending',
-          notes: 'Cuestionario institucional asignado por la administración'
+          notes: 'Cuestionario institucional asignado por la administración',
+          isOptional: q.isOptional ?? false,
+          order: q.order ?? 999
         };
         assignmentsMap.set(q.id, fallbackAssignment);
         saveAssignment(fallbackAssignment).catch(() => {});

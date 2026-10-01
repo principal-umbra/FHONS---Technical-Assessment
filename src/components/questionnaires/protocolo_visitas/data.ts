@@ -14,7 +14,7 @@ export const MATERIAL_VISITAS = {
       num: "1",
       title: "Coordinación de la visita",
       badge: "Preparación Previa",
-      content: `Antes de salir, el agente debe revisar el ticket y confirmar los detalles del trabajo, la fecha y la hora de la visita.
+      content: `Antes de salir, el agente debe revisar el ticket y confirmar los detalles del trabajo, la fecha y la hora de la visita. Asimismo, debe notificar la visita al personal administrativo y asegurarse de que se registre adecuadamente en el documento o proceso de registro de visitas.
 Debe verificar que cuenta con los equipos, materiales, herramientas y accesos necesarios. Cualquier duda o limitación que pueda impedir la atención debe comunicarse a coordinación antes del desplazamiento.`
     },
     {
@@ -22,6 +22,7 @@ Debe verificar que cuenta con los equipos, materiales, herramientas y accesos ne
       title: "Identificación y registro del desplazamiento",
       badge: "Uniforme y Carnet",
       content: `El agente debe salir con su uniforme de trabajo y portar su carnet de identificación visible en todo momento durante la visita o el trabajo fuera de la oficina.
+Debe asegurarse de que la visita esté debidamente notificada al personal administrativo y asentada en el control de registro correspondiente.
 Debe informar cuándo sale de la oficina y cuándo llega a las instalaciones del cliente. Estos avisos permiten conocer su ubicación laboral y dejar constancia de los desplazamientos ante cualquier eventualidad relacionada con riesgos laborales.
 Los retrasos o cambios que afecten la llegada deben comunicarse oportunamente a coordinación y al cliente, indicando la nueva hora estimada.`
     },
@@ -187,5 +188,19 @@ export const QUESTIONS_VISITAS: QuizQuestion[] = [
     ],
     correctAnswer: "a",
     explanation: "Debe comunicarlo tan pronto identifique la posibilidad de prolongación, indicando estado del caso y qué falta para que coordinación determine las acciones."
+  },
+  {
+    id: "v9",
+    section: "Notificación y Registro Administrativo",
+    question: "¿A quién deben ser notificadas las visitas técnicas y de qué debe asegurarse el agente antes de desplazarse?",
+    type: "single_choice",
+    options: [
+      { id: "a", text: "Solo debe comentarlo verbalmente a otro compañero de turno sin registrar nada." },
+      { id: "b", text: "Deben ser notificadas al personal administrativo y asegurarse de que se registre adecuadamente en el documento o proceso de registro de visitas." },
+      { id: "c", text: "No es necesario notificar ni registrar la visita si el cliente ya está esperando en el lugar." },
+      { id: "d", text: "Únicamente se notifica al personal administrativo si la visita toma más de una jornada completa." }
+    ],
+    correctAnswer: "b",
+    explanation: "Las visitas técnicas deben ser notificadas oportunamente al personal administrativo y el agente debe asegurarse de que se registren adecuadamente en el documento o proceso de registro de visitas."
   }
 ];
